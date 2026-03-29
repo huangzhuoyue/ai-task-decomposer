@@ -155,17 +155,10 @@ function getAIConfig(req) {
 
 // LLM 摘要调用函数 (更新以支持 AI 配置)
 async function callLLMSummary(messages, config = null) {
-<<<<<<< Updated upstream:ai-backend/server.js
-    // 如果没有传入 config，尝试从当前上下文获取（虽然在这个异步环境里通常需要显式传入）
-    const cfg = config || { apiKey: API_KEY, apiUrl: API_URL, model: 'GLM-4.6V-FlashX', customBody: {} };
-    
-    // 合并参数
-=======
     // 如果没有传入 config，尝试从当前上下文获取
     const cfg = config || { apiKey: API_KEY, apiUrl: API_URL, model: 'GLM-4.6V-FlashX', customBody: {} };
-    
+
     // 合并参数 (优先系统 prompt 指定的模型，但允许开发者自定义 body)
->>>>>>> Stashed changes:backend/server.js
     const payload = {
         model: cfg.model || 'GLM-4.6V-FlashX',
         messages: messages,
@@ -226,6 +219,7 @@ app.get('/api/auth/register/options', strictAuthMiddleware, async (req, res) => 
             rpName: '我的 AI 任务系统',
             rpID: RP_ID,
 			userID: new Uint8Array(Buffer.from(req.userId.toString())),
+            userID: new Uint8Array(Buffer.from(req.userId.toString())),
             userName: user.username,
             excludeCredentials: existingCreds.map(cred => ({
                 id: cred.credential_id,
@@ -451,6 +445,8 @@ app.post('/api/decompose', async (req, res) => {
         const response = await axios({
             method: 'post', 
             url: config.apiUrl, 
+            method: 'post',
+            url: config.apiUrl,
             responseType: 'stream',
             headers: { 'Authorization': `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
             data: requestData
@@ -510,6 +506,8 @@ app.post('/api/ask', optionalAuthMiddleware, async (req, res) => {
         const response = await axios({
             method: 'post', 
             url: config.apiUrl, 
+            method: 'post',
+            url: config.apiUrl,
             responseType: 'stream',
             headers: { 'Authorization': `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
             data: requestData
@@ -702,6 +700,8 @@ ${JSON.stringify(treeData.progressNodes)}
         const response = await axios({
             method: 'post', 
             url: config.apiUrl, 
+            method: 'post',
+            url: config.apiUrl,
             responseType: 'stream',
             headers: { 'Authorization': `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
             data: requestData
