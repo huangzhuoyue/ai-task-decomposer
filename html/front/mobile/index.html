@@ -1165,6 +1165,23 @@
 
             <hr style="border: none; border-top: 1px solid var(--md-sys-color-outline-variant); margin: 20px 0;">
 
+            <div class="form-section">
+                <div class="section-label"><span class="material-icons-round">settings_applications</span>开发者模式 (自定义 API)</div>
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                    <input type="checkbox" id="devModeToggle" style="width: 20px; height: 20px;">
+                    <label for="devModeToggle" style="font-size: 14px; font-weight: 500;">启用开发者自定义 API</label>
+                </div>
+                <div id="devModeFields" style="display: none; flex-direction: column; gap: 10px;">
+                    <input type="password" id="devApiKey" class="md-dialog-input" placeholder="API Key (X-Dev-Key)">
+                    <input type="text" id="devBaseUrl" class="md-dialog-input" placeholder="Base URL (默认: https://api.openai.com/v1)">
+                    <input type="text" id="devModel" class="md-dialog-input" placeholder="Model Name (默认: glm-4.6v)">
+                    <textarea id="devCustomBody" class="md-dialog-textarea" style="min-height: 80px;" placeholder="Custom Body JSON (例如: {&quot;temperature&quot;: 0.7})"></textarea>
+                    <div style="font-size: 11px; color: gray;">* 配置将保存在本地，请求时通过 Header 透传。</div>
+                </div>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid var(--md-sys-color-outline-variant); margin: 20px 0;">
+
             <button class="action-btn-secondary" id="logoutBtn">
                 <span class="material-icons-round">logout</span> 退出登录
             </button>
@@ -1295,8 +1312,61 @@
             addPasskeyBtn: document.getElementById('addPasskeyBtn'),
             passkeyList: document.getElementById('passkeyList'),
             sendChatBtn: document.getElementById('sendChatBtn'),
-            closeChatBtn: document.getElementById('closeChatBtn')
+            closeChatBtn: document.getElementById('closeChatBtn'),
+            devModeToggle: document.getElementById('devModeToggle'),
+            devModeFields: document.getElementById('devModeFields'),
+            devApiKey: document.getElementById('devApiKey'),
+            devBaseUrl: document.getElementById('devBaseUrl'),
+            devModel: document.getElementById('devModel'),
+            devCustomBody: document.getElementById('devCustomBody')
         };
+
+        // --- 开发者模式逻辑 ---
+        function loadDevSettings() {
+            const settings = JSON.parse(localStorage.getItem('dev_api_settings') || '{}');
+            if (elements.devModeToggle) {
+                elements.devModeToggle.checked = settings.enabled || false;
+                elements.devModeFields.style.display = settings.enabled ? 'flex' : 'none';
+            }
+            if (elements.devApiKey) elements.devApiKey.value = settings.apiKey || '';
+            if (elements.devBaseUrl) elements.devBaseUrl.value = settings.baseUrl || '';
+            if (elements.devModel) elements.devModel.value = settings.model || '';
+            if (elements.devCustomBody) elements.devCustomBody.value = settings.customBody || '';
+        }
+
+        function saveDevSettings() {
+            const settings = {
+                enabled: elements.devModeToggle.checked,
+                apiKey: elements.devApiKey.value.trim(),
+                baseUrl: elements.devBaseUrl.value.trim(),
+                model: elements.devModel.value.trim(),
+                customBody: elements.devCustomBody.value.trim()
+            };
+            localStorage.setItem('dev_api_settings', JSON.stringify(settings));
+        }
+
+        if (elements.devModeToggle) {
+            elements.devModeToggle.addEventListener('change', () => {
+                elements.devModeFields.style.display = elements.devModeToggle.checked ? 'flex' : 'none';
+                saveDevSettings();
+            });
+        }
+        [elements.devApiKey, elements.devBaseUrl, elements.devModel, elements.devCustomBody].forEach(el => {
+            if (el) el.addEventListener('input', saveDevSettings);
+        });
+        loadDevSettings();
+
+        function getDevHeaders() {
+            const settings = JSON.parse(localStorage.getItem('dev_api_settings') || '{}');
+            if (!settings.enabled || !settings.apiKey) return {};
+            const headers = {
+                'X-Dev-Key': settings.apiKey
+            };
+            if (settings.baseUrl) headers['X-Dev-Base'] = settings.baseUrl;
+            if (settings.model) headers['X-Dev-Model'] = settings.model;
+            if (settings.customBody) headers['X-Dev-Body'] = settings.customBody;
+            return headers;
+        }
 
         /**
          * 通用 MD3 对话框 (Mobile)
@@ -1521,7 +1591,10 @@
         // =================== SSE with Auth ===================
         async function fetchSSE(url, bodyData, onUpdate) {
             const token = localStorage.getItem('jwt_token');
-            const headers = { 'Content-Type': 'application/json' };
+            const headers = { 
+                'Content-Type': 'application/json',
+                ...getDevHeaders()
+            };
             if (token) headers['Authorization'] = `Bearer ${token}`;
 
             const response = await fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(bodyData) });

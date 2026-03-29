@@ -578,7 +578,8 @@
             color: var(--md-sys-color-on-surface-variant);
             margin-bottom: 16px;
             display: -webkit-box;
-            -webkit-line-clamp: 3;
+            -webkit-line-clamp: 5;
+            line-clamp: 5;
             -webkit-box-orient: vertical;
             overflow: hidden;
             cursor: pointer;
@@ -587,6 +588,7 @@
 
         .node-desc.expanded {
             -webkit-line-clamp: unset;
+            line-clamp: unset;
             display: block;
         }
 
@@ -658,6 +660,7 @@
             overflow: hidden;
             display: -webkit-box;
             -webkit-line-clamp: 2;
+            line-clamp: 2;
             -webkit-box-orient: vertical;
             color: var(--md-sys-color-on-surface-variant);
         }
@@ -1587,6 +1590,29 @@
 
             <hr style="border: none; border-top: 1px solid var(--md-sys-color-outline-variant); margin: 24px 0;">
 
+            <div class="form-section">
+                <div class="section-title"><span class="material-icons-round">settings_applications</span> 开发者模式 (自定义 API)</div>
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                    <input type="checkbox" id="devModeToggle" style="width: 20px; height: 20px; cursor: pointer;">
+                    <label for="devModeToggle" style="font-size: 15px; font-weight: 500; cursor: pointer;">启用开发者自定义 API</label>
+                </div>
+                <div id="devModeFields" style="display: none; flex-direction: column; gap: 12px;">
+                    <div class="field-label" style="font-size: 12px; color: var(--md-sys-color-primary); font-weight: 600;">API KEY</div>
+                    <input type="password" id="devApiKey" class="md-textfield" placeholder="X-Dev-Key">
+                    <div class="field-label" style="font-size: 12px; color: var(--md-sys-color-primary); font-weight: 600;">BASE URL</div>
+                    <input type="text" id="devBaseUrl" class="md-textfield" placeholder="默认: https://api.openai.com/v1">
+                    <div class="field-label" style="font-size: 12px; color: var(--md-sys-color-primary); font-weight: 600;">MODEL NAME</div>
+                    <input type="text" id="devModel" class="md-textfield" placeholder="默认: glm-4.6v">
+                    <div class="field-label" style="font-size: 12px; color: var(--md-sys-color-primary); font-weight: 600;">CUSTOM BODY (JSON)</div>
+                    <textarea id="devCustomBody" class="md-textfield md-textarea" style="min-height: 80px;" placeholder="例如: {&quot;temperature&quot;: 0.7}"></textarea>
+                    <div style="font-size: 12px; color: var(--md-sys-color-on-surface-variant); line-height: 1.4;">
+                        * 配置将加密保存在本地浏览器，请求时通过 Header 透传。支持 OpenAI 标准。
+                    </div>
+                </div>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid var(--md-sys-color-outline-variant); margin: 24px 0;">
+
             <button class="md-button" id="logoutBtn" style="width: 100%; background: #ffebee; color: #c62828;">
                 <span class="material-icons-round">logout</span> 退出登录
             </button>
@@ -1641,9 +1667,6 @@
     </div>
 
     <script>
-
-
-
         const API_BASE = 'https://api.hzyweb.xyz';
         const state = { 
             mainNodes: [], 
@@ -1679,8 +1702,64 @@
             mdDialogTitle: document.getElementById('mdDialogTitle'),
             mdDialogContent: document.getElementById('mdDialogContent'),
             mdDialogCancel: document.getElementById('mdDialogCancel'),
-            mdDialogConfirm: document.getElementById('mdDialogConfirm')
+            mdDialogConfirm: document.getElementById('mdDialogConfirm'),
+            passkeyList: document.getElementById('passkeyList'),
+            addPasskeyBtn: document.getElementById('addPasskeyBtn'),
+            devModeToggle: document.getElementById('devModeToggle'),
+            devModeFields: document.getElementById('devModeFields'),
+            devApiKey: document.getElementById('devApiKey'),
+            devBaseUrl: document.getElementById('devBaseUrl'),
+            devModel: document.getElementById('devModel'),
+            devCustomBody: document.getElementById('devCustomBody'),
+            logoutBtn: document.getElementById('logoutBtn')
         };
+
+        // --- 开发者模式逻辑 ---
+        function loadDevSettings() {
+            const settings = JSON.parse(localStorage.getItem('dev_api_settings') || '{}');
+            if (elements.devModeToggle) {
+                elements.devModeToggle.checked = settings.enabled || false;
+                elements.devModeFields.style.display = settings.enabled ? 'flex' : 'none';
+            }
+            if (elements.devApiKey) elements.devApiKey.value = settings.apiKey || '';
+            if (elements.devBaseUrl) elements.devBaseUrl.value = settings.baseUrl || '';
+            if (elements.devModel) elements.devModel.value = settings.model || '';
+            if (elements.devCustomBody) elements.devCustomBody.value = settings.customBody || '';
+        }
+
+        function saveDevSettings() {
+            const settings = {
+                enabled: elements.devModeToggle.checked,
+                apiKey: elements.devApiKey.value.trim(),
+                baseUrl: elements.devBaseUrl.value.trim(),
+                model: elements.devModel.value.trim(),
+                customBody: elements.devCustomBody.value.trim()
+            };
+            localStorage.setItem('dev_api_settings', JSON.stringify(settings));
+        }
+
+        if (elements.devModeToggle) {
+            elements.devModeToggle.addEventListener('change', () => {
+                elements.devModeFields.style.display = elements.devModeToggle.checked ? 'flex' : 'none';
+                saveDevSettings();
+            });
+        }
+        [elements.devApiKey, elements.devBaseUrl, elements.devModel, elements.devCustomBody].forEach(el => {
+            if (el) el.addEventListener('input', saveDevSettings);
+        });
+        loadDevSettings();
+
+        function getDevHeaders() {
+            const settings = JSON.parse(localStorage.getItem('dev_api_settings') || '{}');
+            if (!settings.enabled || !settings.apiKey) return {};
+            const headers = {
+                'X-Dev-Key': settings.apiKey
+            };
+            if (settings.baseUrl) headers['X-Dev-Base'] = settings.baseUrl;
+            if (settings.model) headers['X-Dev-Model'] = settings.model;
+            if (settings.customBody) headers['X-Dev-Body'] = settings.customBody;
+            return headers;
+        }
 
         /**
          * 通用 MD3 对话框
@@ -1955,9 +2034,12 @@
         }
 
         // 改造后的流式请求函数，自动携带 JWT Token
-        async function fetchSSE(url, bodyData, streamCallback) {
+        async function fetchSSE(url, bodyData, onUpdate) {
             const token = localStorage.getItem('jwt_token');
-            const headers = { 'Content-Type': 'application/json' };
+            const headers = { 
+                'Content-Type': 'application/json',
+                ...getDevHeaders()
+            };
             if (token) headers['Authorization'] = `Bearer ${token}`;
 
             const response = await fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(bodyData) });
@@ -1987,13 +2069,13 @@
                             const content = JSON.parse(line.slice(6)).choices?.[0]?.delta?.content || "";
                             if (content) {
                                 fullText += content;
-                                if (streamCallback) streamCallback(fullText, false);
+                                if (onUpdate) onUpdate(fullText, false);
                             }
                         } catch (e) { }
                     }
                 }
             }
-            if (streamCallback) streamCallback(fullText, true);
+            if (onUpdate) onUpdate(fullText, true);
             return fullText;
         }
 
@@ -2354,8 +2436,8 @@
                         elements.detailPanelContent.innerHTML = marked.parse(streamText);
                     }
                 });
+
                 if (state.currentTreeId) {
-                    const token = localStorage.getItem('jwt_token');
                     if (token) {
                         fetch(`${API_BASE}/api/trees/${state.currentTreeId}`, {
                             method: 'PUT',

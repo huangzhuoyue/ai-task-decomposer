@@ -125,14 +125,49 @@ const strictAuthMiddleware = (req, res, next) => {
     });
 };
 
-// LLM 摘要调用函数
-async function callLLMSummary(messages) {
-    const response = await axios.post(API_URL, {
-        model: 'GLM-4.6V-FlashX',
+// 动态获取 AI 配置 (开发者模式支持)
+function getAIConfig(req) {
+    const devKey = req.headers['x-dev-key'];
+    const devBase = req.headers['x-dev-base'];
+    const devModel = req.headers['x-dev-model'];
+    const devBodyStr = req.headers['x-dev-body'];
+
+    if (devKey) {
+        let customBody = {};
+        try { if (devBodyStr) customBody = JSON.parse(devBodyStr); } catch (e) { console.error('Error parsing X-Dev-Body:', e); }
+        return {
+            apiKey: devKey,
+            apiUrl: devBase || 'https://api.openai.com/v1/chat/completions',
+            model: devModel || 'glm-4.6v',
+            customBody: customBody,
+            isDev: true
+        };
+    }
+
+    return {
+        apiKey: API_KEY,
+        apiUrl: API_URL,
+        model: 'glm-4.6v',
+        customBody: {},
+        isDev: false
+    };
+}
+
+// LLM 摘要调用函数 (更新以支持 AI 配置)
+async function callLLMSummary(messages, config = null) {
+    // 如果没有传入 config，尝试从当前上下文获取（虽然在这个异步环境里通常需要显式传入）
+    const cfg = config || { apiKey: API_KEY, apiUrl: API_URL, model: 'GLM-4.6V-FlashX', customBody: {} };
+    
+    // 合并参数
+    const payload = {
+        model: cfg.model || 'GLM-4.6V-FlashX',
         messages: messages,
-        temperature: 0.5
-    }, {
-        headers: { 'Authorization': `Bearer ${API_KEY}` }
+        temperature: 0.5,
+        ...cfg.customBody
+    };
+
+    const response = await axios.post(cfg.apiUrl, payload, {
+        headers: { 'Authorization': `Bearer ${cfg.apiKey}` }
     });
     return response.data.choices[0].message.content;
 }
@@ -379,6 +414,7 @@ app.get('/api/history', strictAuthMiddleware, (req, res) => {
 
 //  任务拆解接口 (无状态)
 app.post('/api/decompose', async (req, res) => {
+    const config = getAIConfig(req);
     try {
         const { taskText, images } = req.body;
         let userContent;
@@ -396,10 +432,21 @@ app.post('/api/decompose', async (req, res) => {
             { role: 'user', content: userContent }
         ];
 
+        // 构建请求负载
+        const requestData = {
+            model: config.model,
+            messages: messages,
+            stream: true,
+            "thinking": { "type": "disabled" },
+            ...config.customBody
+        };
+
         const response = await axios({
-            method: 'post', url: API_URL, responseType: 'stream',
-            headers: { 'Authorization': `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
-            data: { model: 'glm-4.6v', messages: messages, stream: true, "thinking": { "type": "disabled" } }
+            method: 'post', 
+            url: config.apiUrl, 
+            responseType: 'stream',
+            headers: { 'Authorization': `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+            data: requestData
         });
 
         res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -409,12 +456,14 @@ app.post('/api/decompose', async (req, res) => {
 
     } catch (error) {
         console.error('Decompose request failed:', error.message);
-        res.status(500).json({ error: 'Backend processing failed' });
+        const errorMsg = error.response && error.response.data ? JSON.stringify(error.response.data) : error.message;
+        res.status(500).json({ error: `Backend processing failed: ${errorMsg}` });
     }
 });
 
 //  节点对话接口 (宽松鉴权 + 数据双写)
 app.post('/api/ask', optionalAuthMiddleware, async (req, res) => {
+    const config = getAIConfig(req);
     const { nodeId, title, desc, userQuestion } = req.body;
     const userId = req.userId; // 可能是 null(访客) 或 具体ID(已登录)
 
@@ -443,10 +492,20 @@ app.post('/api/ask', optionalAuthMiddleware, async (req, res) => {
         messages.push({ role: 'user', content: currentQuestion });
 
         // --- 4. 发起 SSE 流式请求 ---
+        const requestData = {
+            model: config.model,
+            messages: messages,
+            stream: true,
+            "thinking": { "type": "disabled" },
+            ...config.customBody
+        };
+
         const response = await axios({
-            method: 'post', url: API_URL, responseType: 'stream',
-            headers: { 'Authorization': `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
-            data: { model: 'glm-4.6v', messages: messages, stream: true, "thinking": { "type": "disabled" } }
+            method: 'post', 
+            url: config.apiUrl, 
+            responseType: 'stream',
+            headers: { 'Authorization': `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+            data: requestData
         });
 
         res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -481,12 +540,12 @@ app.post('/api/ask', optionalAuthMiddleware, async (req, res) => {
             let newCount = nodeState.chat_count + 1;
 
             if (newCount >= 4) {
-                console.log(`[Node ${nodeId}] Triggering GLM-4.6V-FlashX context compression...`);
+                console.log(`[Node ${nodeId}] Triggering context compression...`);
                 const summaryMessages = [
                     { role: 'system', content: '你是一名文本摘要助手。' },
                     { role: 'user', content: `请用中文回复。请将以下历史执行进度总结为不超过 200 字的简洁摘要，保留核心进展与待办事项。\n已有的总结: ${nodeState.summary}\n最新对话: ${JSON.stringify(recentChat)}` }
                 ];
-                const newSummary = await callLLMSummary(summaryMessages);
+                const newSummary = await callLLMSummary(summaryMessages, config);
                 db.prepare('UPDATE node_states SET summary = ?, recent_chat = ?, chat_count = ? WHERE node_id = ?').run(newSummary, '[]', 0, nodeId);
             } else {
                 db.prepare('UPDATE node_states SET recent_chat = ?, chat_count = ? WHERE node_id = ?').run(JSON.stringify(recentChat), newCount, nodeId);
@@ -495,7 +554,8 @@ app.post('/api/ask', optionalAuthMiddleware, async (req, res) => {
 
     } catch (error) {
         console.error('Ask request failed:', error.message);
-        if (!res.headersSent) res.status(500).json({ error: 'Backend processing failed' });
+        const errorMsg = error.response && error.response.data ? JSON.stringify(error.response.data) : error.message;
+        if (!res.headersSent) res.status(500).json({ error: `Backend processing failed: ${errorMsg}` });
     }
 });
 
@@ -531,8 +591,10 @@ app.post('/api/import', async (req, res) => {
         { role: 'user', content: contentList }
     ];
 
+    const config = getAIConfig(req);
+
     try {
-        const fullContent = await callLLMSummary(messages);
+        const fullContent = await callLLMSummary(messages, config);
         const chunkData = { choices: [{ delta: { content: fullContent } }] };
 
         res.write(`data: ${JSON.stringify(chunkData)}\n\n`);
@@ -602,6 +664,7 @@ app.listen(PORT, () => console.log(`Backend proxy and compression engine started
 
 // 1. 全局问答对话接口
 app.post('/api/chat-tree', async (req, res) => {
+    const config = getAIConfig(req);
     const { treeId, treeData, question, history = [] } = req.body;
 
     try {
@@ -621,10 +684,20 @@ ${JSON.stringify(treeData.progressNodes)}
         messages.push(...history);
         messages.push({ role: 'user', content: question });
 
+        const requestData = {
+            model: config.model,
+            messages: messages,
+            stream: true,
+            "thinking": { "type": "disabled" },
+            ...config.customBody
+        };
+
         const response = await axios({
-            method: 'post', url: API_URL, responseType: 'stream',
-            headers: { 'Authorization': `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
-            data: { model: 'glm-4.6v', messages: messages, stream: true, "thinking": { "type": "disabled" } }
+            method: 'post', 
+            url: config.apiUrl, 
+            responseType: 'stream',
+            headers: { 'Authorization': `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+            data: requestData
         });
 
         res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -656,7 +729,8 @@ ${JSON.stringify(treeData.progressNodes)}
 
     } catch (error) {
         console.error('Chat-tree request failed:', error.message);
-        if (!res.headersSent) res.status(500).json({ error: 'Backend processing failed' });
+        const errorMsg = error.response && error.response.data ? JSON.stringify(error.response.data) : error.message;
+        if (!res.headersSent) res.status(500).json({ error: `Backend processing failed: ${errorMsg}` });
     }
 });
 
