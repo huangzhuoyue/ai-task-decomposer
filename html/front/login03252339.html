@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统登录</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <style>
+        :root {
+            --md-sys-color-primary: #6750A4;
+            --md-sys-color-surface: #FEF7FF;
+            --md-sys-color-on-surface: #1D1B20;
+            --md-sys-color-outline: #79747E;
+            --md-sys-color-primary-container: #EADDFF;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Roboto', sans-serif; background: var(--md-sys-color-surface); display: flex; align-items: center; justify-content: center; height: 100vh; color: var(--md-sys-color-on-surface); }
+        .login-card { background: #fff; padding: 40px; border-radius: 24px; box-shadow: 0 10px 20px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+        .login-card .material-icons-round { font-size: 48px; color: var(--md-sys-color-primary); margin-bottom: 16px; }
+        .login-card h2 { margin-bottom: 8px; font-weight: 600; }
+        .login-card p { color: var(--md-sys-color-outline); margin-bottom: 24px; font-size: 14px; }
+        .input-group { margin-bottom: 16px; text-align: left; }
+        .input-group input { width: 100%; padding: 14px 16px; border: 1px solid var(--md-sys-color-outline); border-radius: 12px; font-size: 15px; transition: 0.2s; }
+        .input-group input:focus { outline: none; border-color: var(--md-sys-color-primary); border-width: 2px; padding: 13px 15px; }
+        .md-button { width: 100%; padding: 14px; background: var(--md-sys-color-primary); color: #fff; border: none; border-radius: 99px; font-size: 16px; font-weight: 600; cursor: pointer; transition: 0.2s; margin-top: 8px; }
+        .md-button:hover { filter: brightness(0.9); }
+        .md-button:disabled { opacity: 0.6; cursor: not-allowed; }
+        .back-link { display: inline-block; margin-top: 16px; color: var(--md-sys-color-primary); text-decoration: none; font-size: 14px; }
+        .error-msg { color: #D32F2F; font-size: 13px; margin-top: 8px; min-height: 18px; }
+    </style>
+</head>
+<body>
+
+    <div class="login-card">
+        <span class="material-icons-round">account_circle</span>
+        <h2>账号登录</h2>
+        <p>如账号不存在将自动注册</p>
+
+        <form id="loginForm">
+            <div class="input-group">
+                <input type="text" id="username" placeholder="请输入用户名" required>
+            </div>
+            <div class="input-group">
+                <input type="password" id="password" placeholder="请输入密码" required>
+            </div>
+            <div class="error-msg" id="errorMsg"></div>
+            <button type="submit" class="md-button" id="submitBtn">登录 / 注册</button>
+        </form>
+        
+        <a href="index.html" class="back-link">暂不登录，以访客身份继续访问</a>
+    </div>
+
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value.trim();
+            const errorMsg = document.getElementById('errorMsg');
+            const submitBtn = document.getElementById('submitBtn');
+
+            if (!username || !password) return;
+
+            submitBtn.disabled = true;
+            submitBtn.innerText = '验证中...';
+            errorMsg.innerText = '';
+
+            try {
+                // 注意：如果你的后端不是运行在 3000 端口，请修改这里的 URL
+                const res = await fetch('https://api.hzyweb.xyz/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const data = await res.json();
+                
+                if (res.ok) {
+                    // 1. 将 Token 存入本地
+                    localStorage.setItem('jwt_token', data.token);
+                    submitBtn.innerText = '登录成功！';
+                    // 2. 延迟半秒后跳转回主页
+                    setTimeout(() => {
+                        window.location.href = 'index.html';
+                    }, 500);
+                } else {
+                    errorMsg.innerText = data.error || '登录失败';
+                    submitBtn.disabled = false;
+                    submitBtn.innerText = '登录 / 注册';
+                }
+            } catch (err) {
+                errorMsg.innerText = '无法连接到服务器';
+                submitBtn.disabled = false;
+                submitBtn.innerText = '登录 / 注册';
+            }
+        });
+    </script>
+</body>
+</html>

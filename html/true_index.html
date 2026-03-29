@@ -1,0 +1,2261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI任务分解与链式执行系统 V4</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <!-- Marked.js for Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        /* Material Design 3 Design Tokens - Dynamic Variables */
+        :root {
+            --md-sys-color-primary: #6750A4;
+            --md-sys-color-on-primary: #FFFFFF;
+            --md-sys-color-primary-container: #EADDFF;
+            --md-sys-color-on-primary-container: #21005D;
+            
+            --md-sys-color-secondary: #625B71;
+            --md-sys-color-on-secondary: #FFFFFF;
+            --md-sys-color-secondary-container: #E8DEF8;
+            --md-sys-color-on-secondary-container: #1D192B;
+            
+            --md-sys-color-tertiary: #7D5260;
+            --md-sys-color-on-tertiary: #FFFFFF;
+            --md-sys-color-tertiary-container: #FFD8E4;
+            --md-sys-color-on-tertiary-container: #31111D;
+            
+            --md-sys-color-surface: #FEF7FF;
+            --md-sys-color-on-surface: #1D1B20;
+            --md-sys-color-surface-variant: #E7E0EC;
+            --md-sys-color-on-surface-variant: #49454F;
+            
+            --md-sys-color-outline: #79747E;
+            --md-sys-color-outline-variant: #CAC4D0;
+            
+            --md-sys-color-error: #B3261E;
+            --md-sys-color-on-error: #FFFFFF;
+            --md-sys-color-error-container: #F9DEDC;
+            
+            --md-sys-color-success: #4CAF50;
+            --md-sys-color-success-container: #C8E6C9;
+            
+            --md-sys-elevation-1: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+            --md-sys-elevation-2: 0 3px 6px rgba(0,0,0,0.16), 0 3px 6px rgba(0,0,0,0.23);
+            --md-sys-elevation-3: 0 10px 20px rgba(0,0,0,0.19), 0 6px 6px rgba(0,0,0,0.23);
+            --md-sys-elevation-4: 0 14px 28px rgba(0,0,0,0.25), 0 10px 10px rgba(0,0,0,0.22);
+            
+            --md-sys-shape-corner-extra-small: 4px;
+            --md-sys-shape-corner-small: 8px;
+            --md-sys-shape-corner-medium: 12px;
+            --md-sys-shape-corner-large: 16px;
+            --md-sys-shape-corner-extra-large: 28px;
+            --md-sys-shape-corner-full: 9999px;
+            
+            --md-sys-motion-easing-emphasized: cubic-bezier(0.2, 0.0, 0.0, 1.0);
+            --md-sys-motion-duration-short: 200ms;
+            --md-sys-motion-duration-medium: 300ms;
+            --md-sys-motion-duration-long: 500ms;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Roboto', system-ui, -apple-system, sans-serif;
+            background: var(--md-sys-color-surface);
+            color: var(--md-sys-color-on-surface);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        /* Minimal Top Bar */
+        .top-bar {
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+        }
+
+        .top-bar::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, 
+                var(--md-sys-color-primary), 
+                var(--md-sys-color-tertiary), 
+                var(--md-sys-color-secondary)
+            );
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo .material-icons-round {
+            font-size: 28px;
+            color: var(--md-sys-color-primary);
+        }
+
+        .logo h1 {
+            font-size: 20px;
+            font-weight: 500;
+            color: var(--md-sys-color-on-surface);
+        }
+
+        .top-bar-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .icon-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: var(--md-sys-shape-corner-full);
+            border: 1px solid var(--md-sys-color-outline);
+            background: var(--md-sys-color-surface);
+            color: var(--md-sys-color-on-surface);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-emphasized);
+        }
+
+        .icon-btn:hover {
+            background: var(--md-sys-color-primary-container);
+            border-color: var(--md-sys-color-primary);
+        }
+
+        .icon-btn .material-icons-round {
+            font-size: 20px;
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            position: relative;
+        }
+
+        /* Usage Guide Card */
+        .usage-guide-card {
+            position: absolute;
+            top: 24px;
+            left: 24px;
+            width: 300px;
+            background: var(--md-sys-color-surface);
+            border-radius: var(--md-sys-shape-corner-large);
+            box-shadow: var(--md-sys-elevation-2);
+            padding: 20px;
+            transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-emphasized);
+            animation: slideInLeft 0.4s var(--md-sys-motion-easing-emphasized);
+        }
+
+        @keyframes slideInLeft {
+            from {
+                opacity: 0;
+                transform: translateX(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .usage-guide-card.hidden {
+            opacity: 0;
+            transform: translateX(-30px);
+            pointer-events: none;
+        }
+
+        .guide-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .guide-title {
+            font-size: 16px;
+            font-weight: 500;
+            color: var(--md-sys-color-on-surface);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .guide-close {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--md-sys-color-on-surface-variant);
+            padding: 4px;
+            border-radius: var(--md-sys-shape-corner-full);
+            transition: all var(--md-sys-motion-duration-short);
+        }
+
+        .guide-close:hover {
+            background: var(--md-sys-color-surface-variant);
+            color: var(--md-sys-color-on-surface);
+        }
+
+        .guide-content {
+            font-size: 13px;
+            color: var(--md-sys-color-on-surface-variant);
+            line-height: 1.6;
+        }
+
+        .guide-content p {
+            margin-bottom: 8px;
+        }
+
+        .guide-content p:last-child {
+            margin-bottom: 0;
+        }
+
+        /* Tree Container */
+        .tree-container {
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 60px;
+            min-height: 600px;
+            position: relative; /* 为绝对定位的加载层准备 */
+        }
+
+        /* Configuration Floating Panel */
+        .config-panel {
+            position: fixed;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            width: 90%;
+            max-width: 600px;
+            max-height: 70vh;
+            background: var(--md-sys-color-surface);
+            border-radius: var(--md-sys-shape-corner-extra-large);
+            box-shadow: var(--md-sys-elevation-4);
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-emphasized);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .config-panel.visible {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+            pointer-events: auto;
+        }
+
+        .config-panel-header {
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--md-sys-color-outline-variant);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--md-sys-color-primary-container);
+            flex-shrink: 0;
+        }
+
+        .config-panel-title {
+            font-size: 16px;
+            font-weight: 500;
+            color: var(--md-sys-color-on-primary-container);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .config-panel-close {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--md-sys-color-on-surface-variant);
+            padding: 8px;
+            border-radius: var(--md-sys-shape-corner-full);
+            transition: all var(--md-sys-motion-duration-short);
+        }
+
+        .config-panel-close:hover {
+            background: var(--md-sys-color-surface-variant);
+            color: var(--md-sys-color-on-surface);
+        }
+
+        .config-panel-body {
+            padding: 24px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        /* Form Sections */
+        .form-section {
+            margin-bottom: 32px;
+        }
+
+        .form-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .section-title {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--md-sys-color-primary);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .section-title .material-icons-round {
+            font-size: 18px;
+        }
+
+        /* Task Input */
+        .md-textfield {
+            width: 100%;
+            padding: 14px 16px;
+            border: 1px solid var(--md-sys-color-outline);
+            border-radius: var(--md-sys-shape-corner-medium);
+            font-size: 15px;
+            font-family: inherit;
+            transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-emphasized);
+            background: var(--md-sys-color-surface);
+            color: var(--md-sys-color-on-surface);
+        }
+
+        .md-textfield:focus {
+            outline: none;
+            border-color: var(--md-sys-color-primary);
+            border-width: 2px;
+            padding: 13px 15px;
+            box-shadow: 0 0 0 3px rgba(103, 80, 164, 0.1);
+        }
+
+        .md-textarea {
+            min-height: 100px;
+            resize: vertical;
+            line-height: 1.5;
+        }
+
+        /* Model Selection */
+        .model-select-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+        }
+
+        .model-option {
+            padding: 10px;
+            border: 2px solid var(--md-sys-color-outline-variant);
+            border-radius: var(--md-sys-shape-corner-medium);
+            cursor: pointer;
+            transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-emphasized);
+            text-align: center;
+            background: var(--md-sys-color-surface);
+        }
+
+        .model-option:hover {
+            border-color: var(--md-sys-color-primary);
+            background: var(--md-sys-color-primary-container);
+        }
+
+        .model-option.active {
+            border-color: var(--md-sys-color-primary);
+            background: var(--md-sys-color-primary-container);
+            font-weight: 500;
+        }
+
+        .model-option .material-icons-round {
+            font-size: 20px;
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        .model-option strong {
+            display: block;
+            color: var(--md-sys-color-on-surface);
+            font-size: 12px;
+        }
+
+        /* Color Picker */
+        .color-picker-group {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            gap: 6px;
+        }
+
+        .color-option {
+            width: 32px;
+            height: 32px;
+            border-radius: var(--md-sys-shape-corner-small);
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-emphasized);
+        }
+
+        .color-option:hover {
+            transform: scale(1.1);
+        }
+
+        .color-option.active {
+            border-color: var(--md-sys-color-on-surface);
+            transform: scale(1.15);
+        }
+
+        /* Buttons */
+        .button-group {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .md-button {
+            flex: 1;
+            padding: 12px 24px;
+            border: none;
+            border-radius: var(--md-sys-shape-corner-full);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-emphasized);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            box-shadow: var(--md-sys-elevation-1);
+        }
+
+        .md-button-primary {
+            background: var(--md-sys-color-primary);
+            color: var(--md-sys-color-on-primary);
+        }
+
+        .md-button-primary:hover {
+            filter: brightness(0.9);
+            box-shadow: var(--md-sys-elevation-2);
+        }
+
+        .md-button-secondary {
+            background: var(--md-sys-color-secondary);
+            color: var(--md-sys-color-on-secondary);
+        }
+
+        .md-button-secondary:hover {
+            filter: brightness(0.9);
+            box-shadow: var(--md-sys-elevation-2);
+        }
+
+        .md-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        /* Toggle Switch */
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .md-switch {
+            position: relative;
+            width: 48px;
+            height: 28px;
+        }
+
+        .md-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .md-switch-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--md-sys-color-outline-variant);
+            transition: var(--md-sys-motion-duration-medium);
+            border-radius: var(--md-sys-shape-corner-full);
+        }
+
+        .md-switch-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 5px;
+            bottom: 5px;
+            background: white;
+            transition: var(--md-sys-motion-duration-medium);
+            border-radius: 50%;
+            box-shadow: var(--md-sys-elevation-1);
+        }
+
+        input:checked + .md-switch-slider {
+            background: var(--md-sys-color-primary);
+        }
+
+        input:checked + .md-switch-slider:before {
+            transform: translateX(20px);
+        }
+
+        /* Config Toggle Button */
+        .config-toggle-btn {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 56px;
+            height: 56px;
+            border-radius: var(--md-sys-shape-corner-extra-large);
+            background: var(--md-sys-color-primary);
+            color: var(--md-sys-color-on-primary);
+            border: none;
+            box-shadow: var(--md-sys-elevation-3);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-emphasized);
+            z-index: 999;
+        }
+
+        .config-toggle-btn:hover {
+            filter: brightness(0.9);
+            box-shadow: var(--md-sys-elevation-4);
+            transform: translateX(-50%) scale(1.05);
+        }
+
+        .config-toggle-btn .material-icons-round {
+            font-size: 28px;
+        }
+
+        /* Tree Structure (from V3) */
+        .tree {
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+        }
+
+        .tree ul {
+			padding-top: 20px;
+			position: relative;
+			display: flex; 
+			justify-content: center;
+			padding-left: 0;
+			margin: 0;
+			list-style: none;
+			width: 100%; 
+		}
+
+        .tree li {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			text-align: center;
+			list-style-type: none;
+			position: relative;
+			padding: 20px 5px 0 5px;
+			transition: all var(--md-sys-motion-duration-long) var(--md-sys-motion-easing-emphasized);
+		}
+
+        @keyframes nodeFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .tree li::before, .tree li::after {
+			content: '';
+			position: absolute;
+			top: 0;
+			right: 50%;
+			border-top: 2px solid var(--md-sys-color-outline-variant);
+			width: 50%;
+			height: 20px;
+			z-index: -1;
+		}
+
+        .tree li::after {
+            right: auto;
+            left: 50%;
+            border-left: 2px solid var(--md-sys-color-outline-variant);
+        }
+
+        .tree li:only-child::after, .tree li:only-child::before {
+            display: none;
+        }
+
+        .tree li:only-child {
+            padding-top: 0;
+        }
+
+        .tree li:first-child::before, .tree li:last-child::after {
+            border: 0 none;
+        }
+
+        .tree li:last-child::before {
+            border-right: 2px solid var(--md-sys-color-outline-variant);
+            border-radius: 0 var(--md-sys-shape-corner-small) 0 0;
+        }
+
+        .tree li:first-child::after {
+            border-radius: var(--md-sys-shape-corner-small) 0 0 0;
+        }
+
+        .tree ul ul::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            border-left: 2px solid var(--md-sys-color-outline-variant);
+            width: 0;
+            height: 20px;
+        }
+
+        /* Node Styles */
+        .node-container {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            position: relative;
+        }
+
+        .node-bubble {
+            border: 2px solid var(--md-sys-color-primary);
+            padding: 16px;
+            border-radius: var(--md-sys-shape-corner-large);
+            display: inline-block;
+            background: var(--md-sys-color-primary-container);
+            min-width: 200px;
+            max-width: 280px;
+            text-align: left;
+            box-shadow: var(--md-sys-elevation-1);
+            transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-emphasized);
+            position: relative;
+            animation: bubbleScaleIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-emphasized);
+        }
+
+        @keyframes bubbleScaleIn {
+            from {
+                opacity: 0;
+                transform: scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .node-bubble:hover {
+            box-shadow: var(--md-sys-elevation-2);
+            transform: translateY(-2px);
+        }
+
+        .node-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .node-number {
+            width: 36px;
+            height: 36px;
+            background: var(--md-sys-color-primary);
+            color: var(--md-sys-color-on-primary);
+            border-radius: var(--md-sys-shape-corner-full);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        .node-title {
+            font-weight: 500;
+            font-size: 16px;
+            color: var(--md-sys-color-on-primary-container);
+            flex: 1;
+        }
+
+        .node-desc {
+            font-size: 13px;
+            color: var(--md-sys-color-on-surface-variant);
+            margin-bottom: 16px;
+            line-height: 1.5;
+            min-height: 20px;
+        }
+
+        .node-action {
+            text-align: right;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .node-action button {
+            padding: 6px 12px;
+            font-size: 12px;
+            border-radius: var(--md-sys-shape-corner-full);
+        }
+
+        /* Progress Node */
+        .progress-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            animation: progressSlideIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-emphasized);
+        }
+
+        @keyframes progressSlideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .progress-node {
+            background: var(--md-sys-color-surface-variant);
+            border: 1px solid var(--md-sys-color-outline-variant);
+            border-radius: var(--md-sys-shape-corner-medium);
+            min-width: 180px;
+            max-width: 220px;
+            text-align: left;
+            position: relative;
+            cursor: pointer;
+            transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-emphasized);
+        }
+
+        .progress-node::before {
+            content: '';
+            position: absolute;
+            left: -8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 0;
+            height: 0;
+            border-top: 6px solid transparent;
+            border-bottom: 6px solid transparent;
+            border-right: 8px solid var(--md-sys-color-outline-variant);
+        }
+
+        .progress-node:hover {
+            border-color: var(--md-sys-color-primary);
+            box-shadow: var(--md-sys-elevation-1);
+        }
+
+        .progress-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 12px;
+            font-size: 12px;
+            color: var(--md-sys-color-primary);
+            font-weight: 500;
+            background: rgba(103, 80, 164, 0.05);
+            border-radius: var(--md-sys-shape-corner-medium) var(--md-sys-shape-corner-medium) 0 0;
+        }
+
+        .progress-title {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .progress-expand-icon {
+            transition: transform var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-emphasized);
+        }
+
+        .progress-node.expanded .progress-expand-icon {
+            transform: rotate(180deg);
+        }
+
+        .progress-preview {
+            padding: 10px 12px;
+            font-size: 11px;
+            color: var(--md-sys-color-on-surface-variant);
+            line-height: 1.4;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+
+        /* Detail Panel */
+        .progress-detail-panel {
+            position: fixed;
+            left: 50%;
+            transform: translateX(-50%) translateY(100%);
+            bottom: 0;
+            width: 80%;
+            max-width: 900px;
+            max-height: 70vh;
+            background: var(--md-sys-color-surface);
+            border-radius: var(--md-sys-shape-corner-extra-large) var(--md-sys-shape-corner-extra-large) 0 0;
+            box-shadow: var(--md-sys-elevation-4);
+            z-index: 3000;
+            opacity: 0;
+            pointer-events: none;
+            transition: all var(--md-sys-motion-duration-long) var(--md-sys-motion-easing-emphasized);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .progress-detail-panel.visible {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+            pointer-events: auto;
+        }
+
+        .detail-panel-header {
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--md-sys-color-outline-variant);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--md-sys-color-primary-container);
+            border-radius: var(--md-sys-shape-corner-extra-large) var(--md-sys-shape-corner-extra-large) 0 0;
+        }
+
+        .detail-panel-title {
+            font-size: 16px;
+            font-weight: 500;
+            color: var(--md-sys-color-on-primary-container);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .detail-panel-close {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--md-sys-color-on-surface-variant);
+            padding: 8px;
+            border-radius: var(--md-sys-shape-corner-full);
+            transition: all var(--md-sys-motion-duration-short);
+        }
+
+        .detail-panel-close:hover {
+            background: var(--md-sys-color-surface-variant);
+            color: var(--md-sys-color-on-surface);
+        }
+
+        .detail-panel-content {
+            padding: 24px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        /* Markdown */
+        .markdown-content {
+            line-height: 1.8;
+            color: var(--md-sys-color-on-surface);
+        }
+
+        .markdown-content h1,
+        .markdown-content h2,
+        .markdown-content h3 {
+            margin-top: 1.5em;
+            margin-bottom: 0.75em;
+            font-weight: 600;
+            color: var(--md-sys-color-on-surface);
+        }
+
+        .markdown-content h1 {
+            font-size: 28px;
+            border-bottom: 2px solid var(--md-sys-color-outline-variant);
+            padding-bottom: 8px;
+        }
+
+        .markdown-content h2 {
+            font-size: 24px;
+        }
+
+        .markdown-content p {
+            margin-bottom: 1em;
+        }
+
+        .markdown-content ul,
+        .markdown-content ol {
+            margin-bottom: 1em;
+            padding-left: 2em;
+        }
+
+        .markdown-content li {
+            margin-bottom: 0.5em;
+        }
+
+        .markdown-content code {
+            background: var(--md-sys-color-surface-variant);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .markdown-content pre {
+            background: var(--md-sys-color-surface-variant);
+            padding: 16px;
+            border-radius: var(--md-sys-shape-corner-medium);
+            overflow-x: auto;
+            margin-bottom: 1em;
+        }
+
+        .markdown-content pre code {
+            background: none;
+            padding: 0;
+        }
+
+        .markdown-content blockquote {
+            border-left: 4px solid var(--md-sys-color-primary);
+            padding-left: 16px;
+            margin: 1em 0;
+            color: var(--md-sys-color-on-surface-variant);
+            font-style: italic;
+        }
+
+        /* Empty State */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--md-sys-color-on-surface-variant);
+            min-height: 400px;
+            text-align: center;
+        }
+
+        .empty-state .material-icons-round {
+            font-size: 80px;
+            margin-bottom: 16px;
+            opacity: 0.3;
+        }
+
+        .empty-state p {
+            font-size: 16px;
+            color: var(--md-sys-color-on-surface-variant);
+            max-width: 400px;
+        }
+
+        /* Loading */
+        .loading {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--md-sys-color-primary);
+            font-weight: 500;
+            padding: 16px;
+            background: var(--md-sys-color-primary-container);
+            border-radius: var(--md-sys-shape-corner-medium);
+            justify-content: center;
+        }
+
+        .loading .material-icons-round {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* Cursor */
+        .cursor {
+            display: inline-block;
+            width: 2px;
+            height: 14px;
+            background: var(--md-sys-color-primary);
+            animation: blink 1s infinite;
+            flex-shrink: 0;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-emphasized);
+        }
+
+        .modal-overlay.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal {
+            background: var(--md-sys-color-surface);
+            border-radius: var(--md-sys-shape-corner-large);
+            box-shadow: var(--md-sys-elevation-4);
+            max-width: 900px;
+            width: 90%;
+            max-height: 80vh;
+            overflow: hidden;
+            transform: scale(0.95);
+            transition: transform var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-emphasized);
+        }
+
+        .modal-overlay.visible .modal {
+            transform: scale(1);
+        }
+
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--md-sys-color-outline-variant);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 500;
+            color: var(--md-sys-color-on-surface);
+        }
+
+        .modal-body {
+            padding: 24px;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+
+        .modal-footer {
+            padding: 16px 24px;
+            border-top: 1px solid var(--md-sys-color-outline-variant);
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        .tree-comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+
+        .tree-comparison-panel {
+            background: var(--md-sys-color-surface-variant);
+            border-radius: var(--md-sys-shape-corner-medium);
+            padding: 16px;
+        }
+
+        .tree-comparison-title {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--md-sys-color-on-surface);
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--md-sys-color-outline-variant);
+        }
+
+        .tree-comparison-content {
+            max-height: 300px;
+            overflow: auto;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--md-sys-color-surface-variant);
+            border-radius: var(--md-sys-shape-corner-full);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--md-sys-color-outline);
+            border-radius: var(--md-sys-shape-corner-full);
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--md-sys-color-on-surface-variant);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .usage-guide-card {
+                width: calc(100% - 48px);
+                top: 16px;
+                left: 24px;
+            }
+            
+            .config-panel {
+                width: 95%;
+                max-height: 80vh;
+            }
+
+            .model-select-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+
+            .color-picker-group {
+                grid-template-columns: repeat(5, 1fr);
+            }
+
+            .progress-detail-panel {
+                width: 95%;
+                max-height: 80vh;
+            }
+
+            .tree-comparison {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* ========================================================= */
+        /* Windows风格等待动画新增样式 */
+        /* ========================================================= */
+        .win-install-screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--md-sys-color-surface);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            opacity: 1;
+            transition: opacity 0.8s ease-in-out;
+            min-height: 600px;
+        }
+
+        .win-install-screen.fade-out {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .win-sentence-container {
+            font-family: 'SimSun', '宋体', serif; /* 强制使用宋体 */
+            font-size: 28px;
+            color: var(--md-sys-color-on-surface);
+            text-align: center;
+            max-width: 70%;
+            line-height: 1.6;
+            opacity: 0;
+            transition: opacity 1s ease-in-out; 
+            letter-spacing: 2px;
+        }
+
+        .win-sentence-container.visible {
+            opacity: 1;
+        }
+
+        .win-install-footer {
+            position: absolute;
+            bottom: 50px;
+            font-family: 'SimSun', '宋体', serif;
+            font-size: 16px;
+            color: var(--md-sys-color-on-surface-variant);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: pulseText 2s infinite ease-in-out;
+        }
+
+        @keyframes pulseText {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Minimal Top Bar -->
+    <header class="top-bar">
+        <div class="logo">
+            <span class="material-icons-round">account_tree</span>
+            <h1>AI任务分解系统</h1>
+        </div>
+        <div class="top-bar-actions">
+            <button class="icon-btn" id="exportBtn" title="导出">
+                <span class="material-icons-round">download</span>
+            </button>
+            <button class="icon-btn" id="clearAllBtn" title="清屏">
+                <span class="material-icons-round">delete_sweep</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Usage Guide Card -->
+        <div class="usage-guide-card" id="usageGuide">
+            <div class="guide-header">
+                <div class="guide-title">
+                    <span class="material-icons-round" style="font-size: 18px;">info</span>
+                    使用说明
+                </div>
+                <button class="guide-close" id="guideCloseBtn">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+            <div class="guide-content">
+                <p>1. 点击底部按钮打开配置面板</p>
+                <p>2. 输入任务并配置 API 密钥</p>
+                <p>3. 点击"开始分解"生成流程图</p>
+                <p>4. 点击节点向 AI 提问</p>
+                <p>5. 点击进度节点查看详细内容</p>
+            </div>
+        </div>
+
+        <!-- Tree Container -->
+        <div class="tree-container" id="treeContainer">
+            <div class="tree" id="treeRoot">
+                <div class="empty-state">
+                    <span class="material-icons-round">account_tree</span>
+                    <p>点击下方按钮配置任务并开始</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Config Toggle Button -->
+    <button class="config-toggle-btn" id="configToggleBtn" title="打开配置">
+        <span class="material-icons-round">settings</span>
+    </button>
+
+    <!-- Configuration Panel (All-in-One) -->
+    <div class="config-panel" id="configPanel">
+        <div class="config-panel-header">
+            <div class="config-panel-title">
+                <span class="material-icons-round" style="font-size: 20px;">tune</span>
+                任务配置
+            </div>
+            <button class="config-panel-close" id="configCloseBtn">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div class="config-panel-body">
+            <!-- Task Input Section -->
+            <div class="form-section">
+                <div class="section-title">
+                    <span class="material-icons-round">assignment</span>
+                    任务输入
+                </div>
+                <textarea id="taskInput" class="md-textfield md-textarea" placeholder="例如：我需要制定一个完整的营销方案，包括市场分析、目标受众、渠道策略等内容..."></textarea>
+            </div>
+
+            <!-- AI Model Section -->
+            <div class="form-section">
+                <div class="section-title">
+                    <span class="material-icons-round">psychology</span>
+                    AI 模型
+                </div>
+                <div class="model-select-grid" id="modelSelect">
+                    <div class="model-option active" data-model="zhipu">
+                        <span class="material-icons-round">track_changes</span>
+                        <strong>智谱GLM</strong>
+                    </div>
+                   <!--
+					<div class="model-option" data-model="wenxin">
+                        <span class="material-icons-round">psychology</span>
+                        <strong>百度文心</strong>
+                    </div>
+                    <div class="model-option" data-model="tongyi">
+                        <span class="material-icons-round">lightbulb</span>
+                        <strong>阿里通义</strong>
+                    </div>
+                    <div class="model-option" data-model="spark">
+                        <span class="material-icons-round">auto_awesome</span>
+                        <strong>讯飞星火</strong>
+                    </div>
+                    <div class="model-option" data-model="custom">
+                        <span class="material-icons-round">build</span>
+                        <strong>自定义</strong>
+                    </div>
+					--!>
+                </div>
+            </div>
+
+            <!-- API Key Section -->
+           <!-- <div class="form-section">
+                <div class="section-title">
+                    <span class="material-icons-round">vpn_key</span>
+                    API 密钥
+                </div>
+                <input type="password" id="apiKey" class="md-textfield" placeholder="输入您的API密钥">
+                <div class="form-group" id="apiUrlGroup" style="margin-top: 12px; display: none;">
+                    <input type="text" id="apiUrl" class="md-textfield" placeholder="自定义API地址">
+                </div>
+                <div class="toggle-container">
+                    <label class="md-switch">
+                        <input type="checkbox" id="streamToggle" checked>
+                        <span class="md-switch-slider"></span>
+                    </label>
+                    <span style="font-size: 14px; color: var(--md-sys-color-on-surface);">启用流式输出</span>
+                </div>
+            </div>
+			--!>
+
+            <!-- Theme Color Section -->
+            <div class="form-section">
+                <div class="section-title">
+                    <span class="material-icons-round">palette</span>
+                    主题颜色
+                </div>
+                <div class="color-picker-group" id="colorPicker">
+                    <div class="color-option active" data-color="#6750A4" style="background: #6750A4;" title="紫色"></div>
+                    <div class="color-option" data-color="#1976D2" style="background: #1976D2;" title="蓝色"></div>
+                    <div class="color-option" data-color="#388E3C" style="background: #388E3C;" title="绿色"></div>
+                    <div class="color-option" data-color="#D32F2F" style="background: #D32F2F;" title="红色"></div>
+                    <div class="color-option" data-color="#F57C00" style="background: #F57C00;" title="橙色"></div>
+                    <div class="color-option" data-color="#7B1FA2" style="background: #7B1FA2;" title="深紫"></div>
+                    <div class="color-option" data-color="#0097A7" style="background: #0097A7;" title="青色"></div>
+                    <div class="color-option" data-color="#5D4037" style="background: #5D4037;" title="棕色"></div>
+                    <div class="color-option" data-color="#455A64" style="background: #455A64;" title="灰色"></div>
+                    <div class="color-option" data-color="#E91E63" style="background: #E91E63;" title="粉色"></div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="button-group">
+                <button class="md-button md-button-secondary" id="clearTaskBtn">
+                    <span class="material-icons-round">delete</span>
+                    清空任务
+                </button>
+                <button class="md-button md-button-primary" id="decomposeBtn">
+                    <span class="material-icons-round">play_arrow</span>
+                    开始分解
+                </button>
+            </div>
+
+            <!-- Loading -->
+            <div class="loading" id="loading" style="display: none; margin-top: 16px;">
+                <span class="material-icons-round">refresh</span>
+                正在连接 AI，请稍候...
+            </div>
+        </div>
+    </div>
+
+    <!-- Progress Detail Panel -->
+    <div class="progress-detail-panel" id="detailPanel">
+        <div class="detail-panel-header">
+            <div class="detail-panel-title">
+                <span class="material-icons-round">chat_bubble</span>
+                <span id="detailPanelTitle">进度详情</span>
+            </div>
+            <button class="detail-panel-close" id="detailPanelClose">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div class="detail-panel-content">
+            <div class="markdown-content" id="detailPanelContent"></div>
+        </div>
+    </div>
+
+    <!-- Update Modal -->
+    <div class="modal-overlay" id="updateModal">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span class="material-icons-round" style="font-size: 20px; margin-right: 8px; color: var(--md-sys-color-primary);">refresh</span>
+                    流程图已更新
+                </div>
+                <button class="config-panel-close" id="modalCloseBtn">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 16px; color: var(--md-sys-color-on-surface-variant);">
+                    AI检测到任务进度更新导致主干计划发生变化，以下是更新前后的对比：
+                </p>
+                <div class="tree-comparison">
+                    <div class="tree-comparison-panel">
+                        <div class="tree-comparison-title">更新前</div>
+                        <div class="tree-comparison-content" id="oldTreePreview"></div>
+                    </div>
+                    <div class="tree-comparison-panel">
+                        <div class="tree-comparison-title">更新后</div>
+                        <div class="tree-comparison-content" id="newTreePreview"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="md-button md-button-secondary" id="rejectUpdateBtn">
+                    <span class="material-icons-round">cancel</span>
+                    保持原计划
+                </button>
+                <button class="md-button md-button-primary" id="acceptUpdateBtn">
+                    <span class="material-icons-round">check</span>
+                    应用更新
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        const state = {
+            currentModel: 'zhipu',
+            apiKey: '',
+            apiUrl: '',
+            isStreaming: true,
+            mainNodes: [],
+            progressNodes: {},
+            isProcessing: false,
+            configPanelVisible: true,
+            lastMainNodes: [],
+            pendingUpdate: null,
+            currentDetailPanel: null,
+            themeColor: '#6750A4'
+        };
+
+        // Model configurations
+        const modelConfigs = {
+            wenxin: {
+                name: '百度文心一言',
+                endpoint: 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/completions',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                formatRequest: (messages, apiKey) => ({
+                    messages: messages,
+                    temperature: 0.7,
+                    max_output_tokens: 2000
+                })
+            },
+            tongyi: {
+                name: '阿里通义千问',
+                endpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
+                headers: {
+                    'Authorization': `Bearer {{apiKey}}`,
+                    'Content-Type': 'application/json'
+                },
+                formatRequest: (messages, apiKey) => ({
+                    model: 'qwen-turbo',
+                    input: {
+                        messages: messages
+                    },
+                    parameters: {
+                        temperature: 0.7,
+                        max_tokens: 2000,
+                        result_format: 'message'
+                    }
+                })
+            },
+            spark: {
+                name: '科大讯飞星火',
+                endpoint: 'https://spark-api.xf-yun.com/v4.0/chat',
+                headers: {
+                    'Authorization': `Bearer {{apiKey}}`,
+                    'Content-Type': 'application/json'
+                },
+                formatRequest: (messages, apiKey) => ({
+                    header: {
+                        app_id: apiKey.split('|')[0] || '',
+                        uid: 'user_' + Date.now()
+                    },
+                    parameter: {
+                        chat: {
+                            temperature: 0.7,
+                            max_tokens: 2000,
+                            top_k: 4
+                        }
+                    },
+                    payload: {
+                        message: {
+                            text: messages
+                        }
+                    }
+                })
+            },
+            zhipu: {
+                name: '智谱大模型',
+                endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+                headers: {
+                    'Authorization': `Bearer {{apiKey}}`,
+                    'Content-Type': 'application/json'
+                },
+                formatRequest: (messages, apiKey) => ({
+                    model: 'glm-4.6v',
+                    messages: messages,
+                    temperature: 0.95,
+                    top_p: 0.7,
+                    max_tokens: 4095,
+                    do_sample: true,
+                    stream: true
+                })
+            },
+            custom: {
+                name: '自定义API',
+                endpoint: '',
+                headers: {
+                    'Authorization': `Bearer {{apiKey}}`,
+                    'Content-Type': 'application/json'
+                },
+                formatRequest: (messages, apiKey) => ({
+                    model: 'gpt-3.5-turbo',
+                    messages: messages,
+                    temperature: 0.7,
+                    max_tokens: 2000
+                })
+            }
+        };
+
+        // DOM elements
+        const elements = {
+            taskInput: document.getElementById('taskInput'),
+            modelSelect: document.getElementById('modelSelect'),
+            apiKey: document.getElementById('apiKey'),
+            apiUrl: document.getElementById('apiUrl'),
+            apiUrlGroup: document.getElementById('apiUrlGroup'),
+            streamToggle: document.getElementById('streamToggle'),
+            colorPicker: document.getElementById('colorPicker'),
+            decomposeBtn: document.getElementById('decomposeBtn'),
+            clearTaskBtn: document.getElementById('clearTaskBtn'),
+            configPanel: document.getElementById('configPanel'),
+            configToggleBtn: document.getElementById('configToggleBtn'),
+            configCloseBtn: document.getElementById('configCloseBtn'),
+            treeRoot: document.getElementById('treeRoot'),
+            loading: document.getElementById('loading'),
+            usageGuide: document.getElementById('usageGuide'),
+            guideCloseBtn: document.getElementById('guideCloseBtn'),
+            detailPanel: document.getElementById('detailPanel'),
+            detailPanelTitle: document.getElementById('detailPanelTitle'),
+            detailPanelContent: document.getElementById('detailPanelContent'),
+            detailPanelClose: document.getElementById('detailPanelClose'),
+            updateModal: document.getElementById('updateModal'),
+            modalCloseBtn: document.getElementById('modalCloseBtn'),
+            acceptUpdateBtn: document.getElementById('acceptUpdateBtn'),
+            rejectUpdateBtn: document.getElementById('rejectUpdateBtn'),
+            oldTreePreview: document.getElementById('oldTreePreview'),
+            newTreePreview: document.getElementById('newTreePreview'),
+            exportBtn: document.getElementById('exportBtn'),
+            clearAllBtn: document.getElementById('clearAllBtn')
+        };
+
+        // Event listeners
+        elements.configToggleBtn.addEventListener('click', toggleConfigPanel);
+        elements.configCloseBtn.addEventListener('click', () => {
+            toggleConfigPanel();
+        });
+        elements.modelSelect.addEventListener('click', handleModelSelect);
+        elements.colorPicker.addEventListener('click', handleColorChange);
+        elements.decomposeBtn.addEventListener('click', handleDecompose);
+        elements.clearTaskBtn.addEventListener('click', () => {
+            elements.taskInput.value = '';
+        });
+        elements.guideCloseBtn.addEventListener('click', () => {
+            elements.usageGuide.classList.add('hidden');
+        });
+        elements.detailPanelClose.addEventListener('click', hideDetailPanel);
+        elements.modalCloseBtn.addEventListener('click', hideModal);
+        elements.acceptUpdateBtn.addEventListener('click', acceptUpdate);
+        elements.rejectUpdateBtn.addEventListener('click', rejectUpdate);
+        elements.exportBtn.addEventListener('click', exportTree);
+        elements.clearAllBtn.addEventListener('click', clearAll);
+
+        // Windows 动画全局控制
+        let hitokotoInterval = null;
+        let hitokotoTimeout = null;
+
+        function startWindowsLoading() {
+            elements.treeRoot.innerHTML = `
+                <div class="win-install-screen" id="winInstallScreen">
+                    <div class="win-sentence-container" id="winSentence">正在准备为您生成专属方案...</div>
+                    <div class="win-install-footer">
+                        <span class="material-icons-round" style="animation: spin 2s linear infinite;">sync</span>
+                        <span>AI生成中...</span>
+                    </div>
+                </div>
+            `;
+            
+            const sentenceEl = document.getElementById('winSentence');
+            
+            // 初次显示先淡入
+            setTimeout(() => {
+                if (sentenceEl) sentenceEl.classList.add('visible');
+            }, 100);
+
+            const fetchAndShow = async () => {
+                if (!document.getElementById('winSentence')) return;
+                
+                // 1. 触发淡出
+                sentenceEl.classList.remove('visible');
+                
+                // 2. 等待淡出动画完成（约1秒）后，请求新句子并淡入
+                hitokotoTimeout = setTimeout(async () => {
+                    if (!document.getElementById('winSentence')) return;
+                    
+                    try {
+                        const res = await fetch('https://v1.hitokoto.cn/?c=i&encode=json');
+                        const data = await res.json();
+                        sentenceEl.innerText = data.hitokoto;
+                    } catch (e) {
+                        sentenceEl.innerText = '保持热爱，奔赴山海。';
+                    }
+                    
+                    sentenceEl.classList.add('visible'); // 触发淡入
+                }, 1000); 
+            };
+
+            // 每 5 秒刷新一次句子
+            hitokotoInterval = setInterval(fetchAndShow, 5000);
+        }
+
+        function stopWindowsLoading(callback) {
+            if (hitokotoInterval) clearInterval(hitokotoInterval);
+            if (hitokotoTimeout) clearTimeout(hitokotoTimeout);
+            
+            const screen = document.getElementById('winInstallScreen');
+            if (screen) {
+                screen.classList.add('fade-out'); // 触发整体淡出
+                // 等待整体淡出动画结束（0.8s）后，再执行渲染节点树的操作
+                setTimeout(() => {
+                    if (callback) callback();
+                }, 800);
+            } else {
+                if (callback) callback();
+            }
+        }
+
+
+        // Toggle config panel
+        function toggleConfigPanel() {
+            state.configPanelVisible = !state.configPanelVisible;
+            elements.configPanel.classList.toggle('visible', state.configPanelVisible);
+        }
+
+        // Model selection
+        function handleModelSelect(e) {
+            const option = e.target.closest('.model-option');
+            if (!option) return;
+
+            document.querySelectorAll('.model-option').forEach(opt => opt.classList.remove('active'));
+            option.classList.add('active');
+            
+            state.currentModel = option.dataset.model;
+            
+            elements.apiUrlGroup.style.display = 
+                state.currentModel === 'custom' ? 'block' : 'none';
+        }
+
+        // Color theme
+        function handleColorChange(e) {
+            const option = e.target.closest('.color-option');
+            if (!option) return;
+
+            document.querySelectorAll('.color-option').forEach(opt => opt.classList.remove('active'));
+            option.classList.add('active');
+            
+            const color = option.dataset.color;
+            state.themeColor = color;
+            
+            document.documentElement.style.setProperty('--md-sys-color-primary', color);
+            document.documentElement.style.setProperty(
+                '--md-sys-color-primary-container',
+                adjustColor(color, 40)
+            );
+        }
+
+        function adjustColor(hex, percent) {
+            const num = parseInt(hex.replace('#', ''), 16);
+            const amt = Math.round(2.55 * percent);
+            const R = (num >> 16) + amt;
+            const G = (num >> 8 & 0x00FF) + amt;
+            const B = (num & 0x0000FF) + amt;
+            return '#' + (0x1000000 +
+                (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 +
+                (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 +
+                (B < 255 ? B < 1 ? 0 : B : 255)
+            ).toString(16).slice(1);
+        }
+
+        // API call
+		async function callAI(systemPrompt, userPrompt, streamCallback = null) {
+			// 统一请求本地后端的代理接口
+			const endpoint = 'http://localhost:3000/api/chat';
+			
+			const messages = [
+				{ role: 'system', content: systemPrompt },
+				{ role: 'user', content: userPrompt }
+			];
+
+			const response = await fetch(endpoint, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				// 前端只发送纯粹的业务数据，不再发送 apiKey 和 model 参数
+				body: JSON.stringify({ messages: messages })
+			});
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				throw new Error(`请求后端代理失败: ${response.status}\n${errorText}`);
+			}
+
+			const reader = response.body.getReader();
+			const decoder = new TextDecoder();
+			let fullResponse = '';
+			let buffer = ''; 
+
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+
+				buffer += decoder.decode(value, { stream: true });
+				let lines = buffer.split('\n');
+				buffer = lines.pop(); // 保留不完整的行
+
+				for (const line of lines) {
+					const trimmedLine = line.trim();
+					if (!trimmedLine || trimmedLine === 'data: [DONE]') continue;
+
+					if (trimmedLine.startsWith('data: ')) {
+						const dataStr = trimmedLine.slice(6);
+						try {
+							const data = JSON.parse(dataStr);
+							const content = data.choices?.[0]?.delta?.content || "";
+							
+							if (content) {
+								fullResponse += content;
+								if (streamCallback) {
+									streamCallback(fullResponse, false);
+								}
+							}
+						} catch (e) {
+							// 忽略解析失败，等待 buffer 补全
+						}
+					}
+				}
+			}
+
+			if (streamCallback) {
+				streamCallback(fullResponse, true);
+			}
+			return fullResponse;
+		}
+
+        function extractStreamingContent(data) {
+            if (data.choices && data.choices[0]) {
+                return data.choices[0].delta?.content || data.choices[0].text || '';
+            }
+            if (data.output && data.output.choices && data.output.choices[0]) {
+                return data.output.choices[0].message?.content || '';
+            }
+            if (data.payload && data.payload.choices && data.payload.choices[0]) {
+                return data.payload.choices[0].text?.content || '';
+            }
+            return '';
+        }
+
+        function getContextPath(nodeId) {
+            const node = state.mainNodes.find(n => n.id == nodeId);
+            if (!node) return '';
+
+            let path = [];
+            let current = node;
+            while (current) {
+                path.unshift(`[${current.id}] ${current.title}: ${current.desc}`);
+                current = state.mainNodes.find(n => n.id == current.parentId);
+            }
+            
+            return path.join('\n→ ');
+        }
+
+        function getAllProgressContext() {
+            let context = '\n\n【已完成的进度记录：】\n';
+            let hasProgress = false;
+            
+            for (const [parentId, progressList] of Object.entries(state.progressNodes)) {
+                const parentNode = state.mainNodes.find(n => n.id == parentId);
+                if (parentNode && progressList.length > 0) {
+                    hasProgress = true;
+                    context += `\n【节点：${parentNode.title}】\n`;
+                    progressList.forEach((prog, idx) => {
+                        context += `  进度${idx + 1}: ${prog.content}\n`;
+                    });
+                }
+            }
+            
+            return hasProgress ? context : '';
+        }
+
+        function isInterrupted(newNodes) {
+            if (state.mainNodes.length !== newNodes.length) return true;
+            
+            const oldStr = JSON.stringify(
+                state.mainNodes.map(n => ({ id: n.id, parentId: n.parentId }))
+            );
+            const newStr = JSON.stringify(
+                newNodes.map(n => ({ id: n.id, parentId: n.parentId }))
+            );
+            
+            return oldStr !== newStr;
+        }
+
+        // Handle decompose
+        async function handleDecompose() {
+            if (state.isProcessing) {
+                alert('正在处理中，请稍候...');
+                return;
+            }
+
+            const apiKey = elements.apiKey.value.trim();
+            const taskInput = elements.taskInput.value.trim();
+
+            if (!apiKey) {
+                alert('请输入API密钥');
+                return;
+            }
+
+            if (!taskInput) {
+                alert('请输入任务描述');
+                return;
+            }
+
+            state.apiKey = apiKey;
+            state.isStreaming = elements.streamToggle.checked;
+            
+            if (state.currentModel === 'custom') {
+                state.apiUrl = elements.apiUrl.value.trim();
+                if (!state.apiUrl) {
+                    alert('请输入API请求地址');
+                    return;
+                }
+            }
+
+            // Hide config panel
+            state.configPanelVisible = false;
+            elements.configPanel.classList.remove('visible');
+
+            state.isProcessing = true;
+            elements.loading.style.display = 'flex';
+            elements.decomposeBtn.disabled = true;
+
+            // 启动沉浸式等待动画
+            startWindowsLoading();
+
+            const systemPrompt = `你是一个专业的任务拆解专家。请评估用户的任务是否可以分解。如果可以，请将其拆解为逻辑链条上的小步骤（允许存在并行的步骤）。每个小步骤的parentId应该是上一个步骤（父节点）的id。最后一个步骤总是具有无子节点，一个或多个父节点的特性。
+            你必须且只能输出严格的 JSON 数组格式，不要包含任何 Markdown 标记或额外文本。格式要求：
+            [{"id": "唯一的数字或字符串", "parentId": "父节点的id(如果是根节点则必须为 null)", "title": "步骤名称", "desc": "具体要做什么"}]
+			输出的最佳实践：[
+							{
+							"id": 1,
+							"task": "策划并举办一场小型家庭晚宴",
+							"parentId": null
+							},
+							{
+							"id": 2,
+							"task": "确定菜单与宾客名单",
+							"parentId": 1
+							},
+							{
+							"id": 3,
+							"task": "采购食材与酒水",
+							"parentId": 2
+							},
+							{
+							"id": 4,
+							"task": "清洁房屋与布置餐桌",
+							"parentId": 2
+							},
+							{
+							"id": 5,
+							"task": "烹饪菜肴",
+							"parentId": 3
+							},
+							{
+							"id": 6,
+							"task": "开始晚宴并提供服务",
+							"parentId": [4, 5]
+							}
+						]
+            注意：如果有可以同时进行的分支任务，请让它们的 parentId 指向同一个父节点。`;
+
+            try {
+                await callAI(systemPrompt, `请分解任务：${taskInput}`, async (streamText, isComplete) => {
+                    // 只在输出完全结束时才打断加载动画并渲染，屏蔽中间过程的流式刷新
+                    if (isComplete) {
+                        try {
+                            const cleanJson = streamText.replace(/```json/gi, '').replace(/```/g, '').trim();
+                            const newNodes = JSON.parse(cleanJson);
+                            
+                            stopWindowsLoading(() => {
+                                if (state.mainNodes.length > 0 && isInterrupted(newNodes)) {
+                                    showUpdateModal(newNodes);
+                                } else {
+                                    state.lastMainNodes = [...state.mainNodes];
+                                    state.mainNodes = newNodes;
+                                    state.progressNodes = {};
+                                    renderTree();
+                                }
+                            });
+                        } catch (parseError) {
+                            console.error('解析失败', parseError);
+                            stopWindowsLoading(() => {
+                                alert(`AI返回的格式无法解析为流程图。\n返回内容：${streamText.substring(0, 200)}...`);
+                                elements.treeRoot.innerHTML = `
+                                    <div class="empty-state">
+                                        <span class="material-icons-round">error</span>
+                                        <p>解析失败，请重试</p>
+                                    </div>
+                                `;
+                            });
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('分解失败', error);
+                stopWindowsLoading(() => {
+                    alert(`任务分解出错：${error.message}`);
+                    elements.treeRoot.innerHTML = `
+                        <div class="empty-state">
+                            <span class="material-icons-round">error</span>
+                            <p>请求失败，请检查配置</p>
+                        </div>
+                    `;
+                });
+            } finally {
+                elements.loading.style.display = 'none';
+                elements.decomposeBtn.disabled = false;
+                state.isProcessing = false;
+            }
+        }
+
+        function showUpdateModal(newNodes) {
+            state.pendingUpdate = newNodes;
+            state.lastMainNodes = [...state.mainNodes];
+            elements.oldTreePreview.innerHTML = renderSimpleTree(state.lastMainNodes);
+            elements.newTreePreview.innerHTML = renderSimpleTree(newNodes);
+            elements.updateModal.classList.add('visible');
+        }
+
+        function hideModal() {
+            elements.updateModal.classList.remove('visible');
+        }
+
+        function acceptUpdate() {
+            if (state.pendingUpdate) {
+                state.mainNodes = state.pendingUpdate;
+                state.progressNodes = {};
+                renderTree();
+            }
+            hideModal();
+            state.pendingUpdate = null;
+        }
+
+        function rejectUpdate() {
+            hideModal();
+            state.pendingUpdate = null;
+        }
+
+        function renderSimpleTree(nodes) {
+            if (!nodes || nodes.length === 0) return '<p style="color: var(--md-sys-color-on-surface-variant);">无数据</p>';
+            
+            const nodeMap = {};
+            let roots = [];
+            
+            nodes.forEach(n => {
+                n.children = [];
+                nodeMap[n.id] = n;
+            });
+            
+            nodes.forEach(n => {
+                if (n.parentId && nodeMap[n.parentId]) {
+                    nodeMap[n.parentId].children.push(n);
+                } else {
+                    roots.push(n);
+                }
+            });
+            
+            function buildHtml(node, level = 0) {
+                const indent = '  '.repeat(level);
+                let html = `${indent}• ${node.title}\n`;
+                if (node.children && node.children.length > 0) {
+                    node.children.forEach(child => {
+                        html += buildHtml(child, level + 1);
+                    });
+                }
+                return html;
+            }
+            
+            let result = '';
+            roots.forEach(root => {
+                result += buildHtml(root);
+            });
+            
+            return `<pre style="font-size: 13px; line-height: 1.5; margin: 0;">${result}</pre>`;
+        }
+
+        function renderTree() {
+            const treeRoot = elements.treeRoot;
+            treeRoot.innerHTML = '';
+
+            if (state.mainNodes.length === 0) {
+                treeRoot.innerHTML = `
+                    <div class="empty-state">
+                        <span class="material-icons-round">account_tree</span>
+                        <p>点击下方按钮配置任务并开始</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const nodeMap = {};
+            let roots = [];
+            
+            state.mainNodes.forEach(n => {
+                n.children = [];
+                nodeMap[n.id] = n;
+            });
+
+            state.mainNodes.forEach(n => {
+                if (n.parentId && nodeMap[n.parentId]) {
+                    nodeMap[n.parentId].children.push(n);
+                } else {
+                    roots.push(n);
+                }
+            });
+
+            function buildHtml(node) {
+                const progressList = state.progressNodes[node.id] || [];
+                let progressHtml = '';
+                
+                if (progressList.length > 0) {
+                    progressHtml = '<div class="progress-container">';
+                    progressList.forEach((prog, idx) => {
+                        const previewText = prog.content.substring(0, 50) + 
+                            (prog.content.length > 50 ? '...' : '');
+                        progressHtml += `
+                            <div class="progress-node" id="progress-${node.id}-${idx}" 
+                                 onclick="toggleProgressDetail('${node.id}', ${idx})">
+                                <div class="progress-header">
+                                    <div class="progress-title">
+                                        <span class="material-icons-round" style="font-size: 14px;">chat_bubble</span>
+                                        进度 #${idx + 1}
+                                    </div>
+                                    <span class="material-icons-round progress-expand-icon" 
+                                          style="font-size: 16px;">expand_more</span>
+                                </div>
+                                <div class="progress-preview">${previewText}</div>
+                            </div>
+                        `;
+                    });
+                    progressHtml += '</div>';
+                }
+                
+                let html = `<li>
+                    <div class="node-container">
+                        <div class="node-bubble" id="node-${node.id}">
+                            <div class="node-header">
+                                <div class="node-number">${state.mainNodes.indexOf(node) + 1}</div>
+                                <div class="node-title">${node.title}</div>
+                            </div>
+                            <div class="node-desc">${node.desc}</div>
+                            <div class="node-action">
+                                <button class="md-button md-button-primary" onclick="askStepAI('${node.id}')">
+                                    <span class="material-icons-round" style="font-size: 14px;">chat</span>
+                                    提问
+                                </button>
+                            </div>
+                        </div>
+                        ${progressHtml}
+                    </div>`;
+                
+                if (node.children && node.children.length > 0) {
+                    html += '<ul>';
+                    node.children.forEach(child => { html += buildHtml(child); });
+                    html += '</ul>';
+                }
+                html += '</li>';
+                return html;
+            }
+
+            let finalHtml = '<ul>';
+            roots.forEach(root => { finalHtml += buildHtml(root); });
+            finalHtml += '</ul>';
+
+            treeRoot.innerHTML = finalHtml;
+        }
+
+        function toggleProgressDetail(parentId, progressIndex) {
+            const progressList = state.progressNodes[parentId];
+            if (!progressList || !progressList[progressIndex]) return;
+
+            const progressNode = progressList[progressIndex];
+            const parentNode = state.mainNodes.find(n => n.id == parentId);
+
+            elements.detailPanelTitle.textContent = `${parentNode.title} - 进度 #${progressIndex + 1}`;
+            const markdownHtml = marked.parse(progressNode.content);
+            elements.detailPanelContent.innerHTML = markdownHtml;
+            elements.detailPanel.classList.add('visible');
+
+            state.currentDetailPanel = { parentId, progressIndex };
+        }
+
+        function hideDetailPanel() {
+            elements.detailPanel.classList.remove('visible');
+            state.currentDetailPanel = null;
+        }
+
+		async function askStepAI(nodeId) {
+			const node = state.mainNodes.find(n => n.id == nodeId);
+			
+			const userQuestion = prompt(`关于步骤 [${node.title}]，您的具体疑问是什么？\n留空则默认请求AI给出执行方案：`);
+			
+			if (userQuestion === null) return; 
+			
+			const btn = document.querySelector(`#node-${nodeId} button`);
+			const originalText = btn.innerHTML;
+			btn.disabled = true;
+			btn.innerHTML = '<span class="material-icons-round" style="font-size: 14px;">refresh</span> 请求中...';
+
+			const contextStr = getContextPath(nodeId);
+			const progressContext = getAllProgressContext();
+			
+			const systemPrompt = `你是一个项目的执行助理。当前所处阶段：${node.title}。
+			任务说明：${node.desc}。
+			
+			【你的已知上下文环境（必须参考前置逻辑）：】
+			${contextStr ? contextStr : "这是项目的第一步。"}
+			${progressContext}
+			
+			请根据上下文，直接回答用户针对当前步骤的问题，或给出这一步的具体操作指导。你可以使用Markdown格式来组织你的回答。保持客观、精炼。`;
+
+			const userPrompt = userQuestion.trim() ? `我的问题：${userQuestion}` : `请直接为我提供这一步的具体执行方案。`;
+
+			try {
+				if (!state.progressNodes[nodeId]) {
+					state.progressNodes[nodeId] = [];
+				}
+				
+				const progressIndex = state.progressNodes[nodeId].length;
+				state.progressNodes[nodeId].push({ content: '' });
+				
+				renderTree(); 
+				
+				const progressElement = document.querySelector(`#progress-${nodeId}-${progressIndex} .progress-preview`);
+				if (progressElement) {
+					progressElement.innerHTML = '<span class="material-icons-round" style="font-size: 14px; animation: spin 1s linear infinite;">sync</span> 正在生成...';
+				}
+				
+				await callAI(systemPrompt, userPrompt, (streamText, isComplete) => {
+					state.progressNodes[nodeId][progressIndex].content = streamText;
+					
+					if (progressElement) {
+						progressElement.textContent = streamText.substring(0, 50) + (streamText.length > 50 ? '...' : '');
+					}
+
+					if (state.currentDetailPanel && 
+						state.currentDetailPanel.parentId === nodeId && 
+						state.currentDetailPanel.progressIndex === progressIndex) {
+						elements.detailPanelContent.innerHTML = marked.parse(streamText);
+					}
+				});
+			} catch (error) {
+				console.error('提问失败', error);
+				alert('提问失败：' + error.message);
+			} finally {
+				btn.disabled = false;
+				btn.innerHTML = originalText;
+			}
+		}
+
+        function exportTree() {
+            if (state.mainNodes.length === 0) {
+                alert('没有可导出的数据');
+                return;
+            }
+
+            const exportData = {
+                version: '4.0',
+                exportTime: new Date().toISOString(),
+                task: elements.taskInput.value,
+                themeColor: state.themeColor,
+                mainNodes: state.mainNodes,
+                progressNodes: state.progressNodes
+            };
+
+            const jsonStr = JSON.stringify(exportData, null, 2);
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `task_tree_${Date.now()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function clearAll() {
+            if (confirm('确定要清空所有内容吗？这将删除所有任务、节点和进度记录。')) {
+                state.mainNodes = [];
+                state.progressNodes = {};
+                elements.taskInput.value = '';
+                hideDetailPanel();
+                renderTree();
+                
+                elements.usageGuide.classList.remove('hidden');
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            state.configPanelVisible = true;
+            elements.configPanel.classList.add('visible');
+        });
+    </script>
+</body>
+</html>

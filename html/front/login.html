@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>系统登录</title>
+	<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600&display=swap" rel="stylesheet">
+	<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+	<script src="https://cdn.jsdelivr.net/npm/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
+	<style>
+		:root {
+			--md-sys-color-primary: #6750A4;
+			--md-sys-color-surface: #FEF7FF;
+			--md-sys-color-on-surface: #1D1B20;
+			--md-sys-color-outline: #79747E;
+			--md-sys-color-primary-container: #EADDFF;
+		}
+
+		* {
+			box-sizing: border-box;
+			margin: 0;
+			padding: 0;
+		}
+
+		body {
+			font-family: 'Roboto', sans-serif;
+			background: var(--md-sys-color-surface);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			height: 100vh;
+			color: var(--md-sys-color-on-surface);
+		}
+
+		.login-card {
+			background: #fff;
+			padding: 40px;
+			border-radius: 24px;
+			box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+			width: 100%;
+			max-width: 400px;
+			text-align: center;
+		}
+
+		.login-card .material-icons-round {
+			font-size: 48px;
+			color: var(--md-sys-color-primary);
+			margin-bottom: 16px;
+		}
+
+		.login-card h2 {
+			margin-bottom: 8px;
+			font-weight: 600;
+		}
+
+		.login-card p {
+			color: var(--md-sys-color-outline);
+			margin-bottom: 24px;
+			font-size: 14px;
+		}
+
+		.input-group {
+			margin-bottom: 16px;
+			text-align: left;
+		}
+
+		.input-group input {
+			width: 100%;
+			padding: 14px 16px;
+			border: 1px solid var(--md-sys-color-outline);
+			border-radius: 12px;
+			font-size: 15px;
+			transition: 0.2s;
+		}
+
+		.input-group input:focus {
+			outline: none;
+			border-color: var(--md-sys-color-primary);
+			border-width: 2px;
+			padding: 13px 15px;
+		}
+
+		.md-button {
+			width: 100%;
+			padding: 14px;
+			background: var(--md-sys-color-primary);
+			color: #fff;
+			border: none;
+			border-radius: 99px;
+			font-size: 16px;
+			font-weight: 600;
+			cursor: pointer;
+			transition: 0.2s;
+			margin-top: 8px;
+		}
+
+		.md-button:hover {
+			filter: brightness(0.9);
+		}
+
+		.md-button:disabled {
+			opacity: 0.6;
+			cursor: not-allowed;
+		}
+
+		.back-link {
+			display: inline-block;
+			margin-top: 16px;
+			color: var(--md-sys-color-primary);
+			text-decoration: none;
+			font-size: 14px;
+		}
+
+		.error-msg {
+			color: #D32F2F;
+			font-size: 13px;
+			margin-top: 8px;
+			min-height: 18px;
+		}
+	</style>
+</head>
+
+<body>
+
+	<div class="login-card">
+		<span class="material-icons-round">account_circle</span>
+		<h2>账号登录</h2>
+		<p>如账号不存在将自动注册</p>
+
+		<form id="loginForm">
+			<div class="input-group">
+				<input type="text" id="username" placeholder="请输入用户名" required>
+			</div>
+			<div class="input-group">
+				<input type="password" id="password" placeholder="请输入密码 (通行证登录可不填)">
+			</div>
+			<div class="error-msg" id="errorMsg"></div>
+			<button type="submit" class="md-button" id="submitBtn">登录 / 注册</button>
+			<button type="button" class="md-button" id="passkeyLoginBtn"
+				style="background: var(--md-sys-color-primary-container); color: var(--md-sys-color-primary); margin-top: 12px;">使用生物识别
+				/ 通行证登录</button>
+		</form>
+
+		<a href="index.html" class="back-link">暂不登录，以访客身份继续访问</a>
+	</div>
+
+    <!-- 通用 MD3 对话框结构 -->
+    <div class="md-dialog-overlay" id="mdDialogOverlay">
+        <div class="md-dialog">
+            <h3 class="md-dialog-title" id="mdDialogTitle"></h3>
+            <div class="md-dialog-content" id="mdDialogContent"></div>
+            <div class="md-dialog-actions">
+                <button class="md-dialog-btn" id="mdDialogCancel"></button>
+                <button class="md-dialog-btn" id="mdDialogConfirm"></button>
+            </div>
+        </div>
+    </div>
+
+	<script>
+		const { startRegistration, startAuthentication } = SimpleWebAuthnBrowser;
+		const API_BASE = 'https://api.hzyweb.xyz/api';
+
+		const errorMsg = document.getElementById('errorMsg');
+		const submitBtn = document.getElementById('submitBtn');
+		const passkeyBtn = document.getElementById('passkeyLoginBtn');
+        
+        // 对话框元素引用
+        const elements = {
+            mdDialogOverlay: document.getElementById('mdDialogOverlay'),
+            mdDialogTitle: document.getElementById('mdDialogTitle'),
+            mdDialogContent: document.getElementById('mdDialogContent'),
+            mdDialogCancel: document.getElementById('mdDialogCancel'),
+            mdDialogConfirm: document.getElementById('mdDialogConfirm')
+        };
+
+        function showMdDialog({ title, content, fields = [], confirmText = '确认', cancelText = '取消' }) {
+            return new Promise((resolve) => {
+                elements.mdDialogTitle.innerText = title;
+                elements.mdDialogContent.innerHTML = content ? `<p>${content}</p>` : '';
+                
+                const fieldValues = {};
+                fields.forEach(f => {
+                    const fieldDiv = document.createElement('div');
+                    fieldDiv.className = 'md-dialog-field';
+                    if (f.label) fieldDiv.innerHTML += `<label>${f.label}</label>`;
+                    
+                    const input = document.createElement('input');
+                    input.type = f.type || 'text';
+                    input.className = 'md-dialog-input';
+                    input.value = f.value || '';
+                    if (f.placeholder) input.placeholder = f.placeholder;
+                    
+                    input.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            elements.mdDialogConfirm.click();
+                        }
+                    });
+                    
+                    fieldDiv.appendChild(input);
+                    elements.mdDialogContent.appendChild(fieldDiv);
+                    f.el = input;
+                });
+
+                elements.mdDialogConfirm.innerText = confirmText;
+                elements.mdDialogCancel.innerText = cancelText;
+                elements.mdDialogOverlay.classList.add('visible');
+
+                const cleanup = (result) => {
+                    elements.mdDialogOverlay.classList.remove('visible');
+                    elements.mdDialogConfirm.onclick = null;
+                    elements.mdDialogCancel.onclick = null;
+                    resolve(result);
+                };
+
+                elements.mdDialogConfirm.onclick = () => {
+                    fields.forEach(f => { fieldValues[f.key] = f.el.value; });
+                    cleanup(fields.length ? fieldValues : true);
+                };
+                elements.mdDialogCancel.onclick = () => cleanup(null);
+            });
+        }
+
+        function getDeviceOS() {
+            const ua = navigator.userAgent;
+            if (/android/i.test(ua)) return 'Android 手机';
+            if (/iPad|iPhone|iPod/.test(ua)) return 'iOS 设备';
+            if (/Windows/i.test(ua)) return 'Windows 电脑';
+            if (/Macintosh/i.test(ua)) return 'macOS 电脑';
+            return '移动设备';
+        }
+        
+        function setCrossDomainCookie(name, value, days = 7) {
+            const expires = new Date(Date.now() + days * 864e5).toUTCString();
+            const host = window.location.hostname;
+            const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(host);
+            let domainClause = "";
+            if (host !== 'localhost' && !isIp) {
+                const parts = host.split('.');
+                if (parts.length >= 2) {
+                    domainClause = `; domain=.${parts.slice(-2).join('.')}`;
+                }
+            }
+            document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax${domainClause}${window.location.protocol === 'https:' ? '; Secure' : ''}`;
+        }
+
+		// ================= 1. 传统账密登录与【绑定设备】逻辑 =================
+		document.getElementById('loginForm').addEventListener('submit', async (e) => {
+			e.preventDefault();
+			const username = document.getElementById('username').value.trim();
+			const password = document.getElementById('password').value.trim();
+
+			if (!username || !password) {
+				errorMsg.innerText = '账密登录需要填写用户名和密码';
+				return;
+			}
+
+			submitBtn.disabled = true;
+			submitBtn.innerText = '验证中...';
+			errorMsg.innerText = '';
+
+			try {
+				const res = await fetch(`${API_BASE}/login`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ username, password })
+				});
+				const data = await res.json();
+
+				if (res.ok) {
+					localStorage.setItem('jwt_token', data.token);
+                    setCrossDomainCookie('jwt_token', data.token); // 同步到 Cookie
+					submitBtn.innerText = '登录成功！';
+
+					// 【新增】登录成功后，询问是否绑定当前设备为通行证
+					if (!localStorage.getItem('passkey_bound')) {
+						const bindConfirmed = await showMdDialog({
+							title: '绑定通行证',
+							content: '是否将当前设备 (指纹/面容) 绑定为通行证，以便下次免密登录？',
+							confirmText: '立即绑定',
+							cancelText: '以后再说'
+						});
+						if (bindConfirmed) {
+							await registerPasskey(data.token);
+						}
+					}
+
+					setTimeout(() => { window.location.href = 'index.html'; }, 500);
+				} else {
+					errorMsg.innerText = data.error || '登录失败';
+					submitBtn.disabled = false;
+					submitBtn.innerText = '账密 登录 / 注册';
+				}
+			} catch (err) {
+				errorMsg.innerText = '无法连接到服务器';
+				submitBtn.disabled = false;
+			}
+		});
+
+		// ================= 2. 绑定设备 (注册) 逻辑 =================
+		async function registerPasskey(token) {
+			try {
+                // 1. 获取设备默认名称
+                const deviceNameResult = await showMdDialog({
+                    title: '绑定通行证',
+                    content: '请为当前设备起个名字，方便日后管理：',
+                    fields: [{ label: '设备名称', key: 'name', value: getDeviceOS(), placeholder: '如：我的常用手机' }],
+                    confirmText: '开始绑定'
+                });
+                
+                if (!deviceNameResult || !deviceNameResult.name) return;
+                const deviceName = deviceNameResult.name;
+
+				// 2. 获取注册选项
+				const resp = await fetch(`${API_BASE}/auth/register/options`, {
+					headers: { 'Authorization': `Bearer ${token}` }
+				});
+				const options = await resp.json();
+				if (options.error) throw new Error(options.error);
+
+				// 3. 唤起浏览器的生物识别
+				const attResp = await startRegistration({ optionsJSON: options });
+
+				// 4. 将结果发送给后端验证
+				const verifyResp = await fetch(`${API_BASE}/auth/register/verify`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'Authorization': `Bearer ${token}`
+					},
+					body: JSON.stringify({ ...attResp, deviceName }),
+				});
+
+				const verifyResult = await verifyResp.json();
+				if (verifyResult.success) {
+                    localStorage.setItem('passkey_bound', 'true'); // 标记已绑定
+					alert('设备绑定成功！下次可使用通行证一键登录。');
+				}
+			} catch (error) {
+				console.error(error);
+				alert('绑定已取消或失败，你仍可以使用账号密码正常访问。');
+			}
+		}
+
+		// ================= 3. 免密登录 (通行证) 逻辑 =================
+		passkeyBtn.addEventListener('click', async () => {
+			const username = document.getElementById('username').value.trim();
+			if (!username) {
+				errorMsg.innerText = '请先在上方输入你的用户名，再点击通行证登录';
+				return;
+			}
+
+			passkeyBtn.disabled = true;
+			passkeyBtn.innerText = '唤起验证中...';
+			errorMsg.innerText = '';
+
+			try {
+				// 1. 获取登录选项
+				const resp = await fetch(`${API_BASE}/auth/login/options`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ username })
+				});
+				const data = await resp.json();
+				if (data.error) throw new Error(data.error);
+
+				// 2. 唤起生物识别
+				const asseResp = await startAuthentication({ optionsJSON: data.options });
+
+				// 3. 发送签名到后端验证
+				const verifyResp = await fetch(`${API_BASE}/auth/login/verify`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ assertion: asseResp, userId: data.userId })
+				});
+
+				const verifyResult = await verifyResp.json();
+
+				if (verifyResult.success) {
+					localStorage.setItem('jwt_token', verifyResult.token);
+                    setCrossDomainCookie('jwt_token', verifyResult.token); // 同步到 Cookie
+					passkeyBtn.innerText = '认证成功！';
+					setTimeout(() => { window.location.href = 'index.html'; }, 500);
+				} else {
+					throw new Error(verifyResult.error || '验证失败');
+				}
+			} catch (err) {
+				console.error(err);
+				errorMsg.innerText = err.message === 'The operation either timed out or was not allowed.' ? '已取消验证' : (err.message || '通行证登录失败');
+				passkeyBtn.disabled = false;
+				passkeyBtn.innerText = '使用生物识别 / 通行证登录';
+			}
+		});
+	</script>
+</body>
+
+</html>
