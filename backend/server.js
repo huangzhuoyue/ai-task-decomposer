@@ -5,6 +5,7 @@ const Database = require('better-sqlite3');
 const axios = require('axios');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
+const util = require('util');
 
 const app = express();
 app.use(cors());
@@ -441,8 +442,8 @@ app.post('/api/decompose', async (req, res) => {
         };
 
         const response = await axios({
-            method: 'post', 
-            url: config.apiUrl, 
+            method: 'post',
+            url: config.apiUrl,
             responseType: 'stream',
             headers: { 'Authorization': `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
             data: requestData
@@ -455,7 +456,9 @@ app.post('/api/decompose', async (req, res) => {
 
     } catch (error) {
         console.error('Decompose request failed:', error.message);
-        const errorMsg = error.response && error.response.data ? JSON.stringify(error.response.data) : error.message;
+        const errorMsg = error.response && error.response.data
+            ? util.format('%j', error.response.data) // %j 会尝试序列化 JSON，失败时会妥善处理
+            : error.message;
         res.status(500).json({ error: `Backend processing failed: ${errorMsg}` });
     }
 });
@@ -500,8 +503,8 @@ app.post('/api/ask', optionalAuthMiddleware, async (req, res) => {
         };
 
         const response = await axios({
-            method: 'post', 
-            url: config.apiUrl, 
+            method: 'post',
+            url: config.apiUrl,
             responseType: 'stream',
             headers: { 'Authorization': `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
             data: requestData
@@ -692,8 +695,8 @@ ${JSON.stringify(treeData.progressNodes)}
         };
 
         const response = await axios({
-            method: 'post', 
-            url: config.apiUrl, 
+            method: 'post',
+            url: config.apiUrl,
             responseType: 'stream',
             headers: { 'Authorization': `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
             data: requestData
