@@ -130,7 +130,7 @@ const strictAuthMiddleware = (req, res, next) => {
 async function getAxiosError(error) {
     if (!error.response) return error.message;
     const status = error.response.status;
-    
+
     // 如果是 stream，需要尝试读取数据
     if (error.response.data && typeof error.response.data.on === 'function') {
         try {
@@ -146,7 +146,7 @@ async function getAxiosError(error) {
             return `Status ${status}: ${error.message}`;
         }
     }
-    
+
     // 非 stream 模式且有 data
     try {
         const body = typeof error.response.data === 'string' ? error.response.data : JSON.stringify(error.response.data);
