@@ -1693,6 +1693,7 @@
             scale: 1, 
             currentTreeId: null,
             editMode: false,
+            nodeAsking: null,  // 当前正在提问的节点 ID，防止并发串对话
             globalHistory: [],
             undoStack: [],
             redoStack: []
@@ -2424,6 +2425,11 @@
         }
 
         async function askNode(nodeId) {
+            // 防止并发提问串对话
+            if (state.nodeAsking) {
+                alert('已有对话正在进行中，请稍候再提问');
+                return;
+            }
             const node = state.mainNodes.find(n => n.id == nodeId);
             const res = await showMdDialog({
                 title: '向 AI 提问',
@@ -2440,6 +2446,7 @@
             const origTxt = btn.innerText; btn.disabled = true; btn.innerText = '...';
 
             try {
+                state.nodeAsking = nodeId;  // 加锁
                 if (!state.progressNodes[nodeId]) state.progressNodes[nodeId] = [];
                 const pIdx = state.progressNodes[nodeId].length;
                 state.progressNodes[nodeId].push({ content: '' }); renderTree();
@@ -2464,7 +2471,7 @@
                     }
                 }
             } catch (err) { alert('通信失败: ' + err.message); }
-            finally { btn.disabled = false; btn.innerText = origTxt; }
+            finally { state.nodeAsking = null; btn.disabled = false; btn.innerText = origTxt; }
         }
         function showDetail(nid, idx) {
             elements.detailPanelTitle.innerText = `${state.mainNodes.find(n => n.id == nid).title} - 进度 #${idx + 1}`;

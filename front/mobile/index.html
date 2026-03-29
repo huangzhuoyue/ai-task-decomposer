@@ -1289,6 +1289,7 @@
             isProcessing: false, 
             currentTreeId: null,
             editMode: false,
+            nodeAsking: null,  // 当前正在提问的节点 ID，防止并发串对话
             globalHistory: [],
             undoStack: [],
             redoStack: []
@@ -1963,6 +1964,11 @@
 
         // =================== Ask Node ===================
         async function askNode(id) {
+            // 防止并发提问串对话
+            if (state.nodeAsking) {
+                alert('已有对话正在进行中，请稍候再提问');
+                return;
+            }
             const node = state.mainNodes.find(n => n.id == id);
             const res = await showMdDialog({
                 title: '向 AI 提问',
@@ -1980,6 +1986,7 @@
             renderTree();
 
             try {
+                state.nodeAsking = id;  // 加锁
                 await fetchSSE(`${API_BASE}/api/ask`, {
                     nodeId: id, userQuestion: q, title: node.title, desc: node.desc
                 }, (txt) => {
@@ -2002,6 +2009,7 @@
                 }
                 renderTree();
             } catch (err) { alert('通信失败: ' + err.message); }
+            finally { state.nodeAsking = null; }
         }
 
         function showProgress(id, idx) {
