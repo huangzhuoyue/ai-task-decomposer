@@ -22,8 +22,10 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-key';
 const SALT_ROUNDS = 10;
 const API_KEY = process.env.ZHIPU_API_KEY;
 const API_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
-const RP_ID = process.env.RP_ID || 'hzyweb.xyz'; 
-const EXPECTED_ORIGIN = process.env.EXPECTED_ORIGIN || 'https://hzyweb.xyz'; 
+const RP_ID = process.env.RP_ID || 'hzyweb.xyz';
+const EXPECTED_ORIGIN = process.env.EXPECTED_ORIGIN
+    ? process.env.EXPECTED_ORIGIN.split(',').map(s => s.trim())
+    : ['https://hzyweb.xyz', 'https://m.hzyweb.xyz'];
 
 // 内存存储 Challenge（由于目前没有 Redis 等会话存储，使用 Map 暂存）
 const challengeStore = new Map();
@@ -55,7 +57,7 @@ db.exec(`
     node_id TEXT,
     role TEXT,
     content TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT (datetime('now', '+8 hours'))
   );
 
   -- 整树快照表
@@ -64,7 +66,7 @@ db.exec(`
     user_id INTEGER,
     title TEXT,
     tree_data TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT (datetime('now', '+8 hours'))
   );
   
   -- WebAuthn 凭证表
@@ -74,9 +76,26 @@ db.exec(`
     credential_id TEXT UNIQUE,
     public_key TEXT,
     counter INTEGER,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    device_name TEXT DEFAULT '未命名设备',
+    created_at DATETIME DEFAULT (datetime('now', '+8 hours'))
+  );
+
+  -- 全局聊天历史 (针对整个树的问答)
+  CREATE TABLE IF NOT EXISTS global_chat_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tree_id INTEGER,
+    role TEXT,
+    content TEXT,
+    created_at DATETIME DEFAULT (datetime('now', '+8 hours'))
   );
 `);
+// 数据库迁移：确保 webauthn_credentials 表中有 device_name 列
+try {
+    db.prepare("ALTER TABLE webauthn_credentials ADD COLUMN device_name TEXT DEFAULT '未命名设备'").run();
+} catch (e) {
+    // 列可能已经存在，忽略错误
+}
+
 
 // ================= 中间件与辅助函数 =================
 
@@ -106,14 +125,49 @@ const strictAuthMiddleware = (req, res, next) => {
     });
 };
 
-// LLM 摘要调用函数
-async function callLLMSummary(messages) {
-    const response = await axios.post(API_URL, {
-        model: 'GLM-4.6V-FlashX', 
+// 动态获取 AI 配置 (开发者模式支持)
+function getAIConfig(req) {
+    const devKey = req.headers['x-dev-key'];
+    const devBase = req.headers['x-dev-base'];
+    const devModel = req.headers['x-dev-model'];
+    const devBodyStr = req.headers['x-dev-body'];
+
+    if (devKey) {
+        let customBody = {};
+        try { if (devBodyStr) customBody = JSON.parse(devBodyStr); } catch (e) { console.error('Error parsing X-Dev-Body:', e); }
+        return {
+            apiKey: devKey,
+            apiUrl: devBase || 'https://api.openai.com/v1/chat/completions',
+            model: devModel || 'glm-4.6v',
+            customBody: customBody,
+            isDev: true
+        };
+    }
+
+    return {
+        apiKey: API_KEY,
+        apiUrl: API_URL,
+        model: 'glm-4.6v',
+        customBody: {},
+        isDev: false
+    };
+}
+
+// LLM 摘要调用函数 (更新以支持 AI 配置)
+async function callLLMSummary(messages, config = null) {
+    // 如果没有传入 config，尝试从当前上下文获取（虽然在这个异步环境里通常需要显式传入）
+    const cfg = config || { apiKey: API_KEY, apiUrl: API_URL, model: 'GLM-4.6V-FlashX', customBody: {} };
+    
+    // 合并参数
+    const payload = {
+        model: cfg.model || 'GLM-4.6V-FlashX',
         messages: messages,
-        temperature: 0.5
-    }, {
-        headers: { 'Authorization': `Bearer ${API_KEY}` }
+        temperature: 0.5,
+        ...cfg.customBody
+    };
+
+    const response = await axios.post(cfg.apiUrl, payload, {
+        headers: { 'Authorization': `Bearer ${cfg.apiKey}` }
     });
     return response.data.choices[0].message.content;
 }
@@ -125,7 +179,7 @@ app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     try {
         let user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-        
+
         if (!user) {
             // 用户不存在 -> 执行静默注册
             const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
@@ -157,17 +211,17 @@ app.get('/api/auth/register/options', strictAuthMiddleware, async (req, res) => 
 
         // 获取用户已绑定的设备，防止重复绑定
         const existingCreds = db.prepare('SELECT credential_id FROM webauthn_credentials WHERE user_id = ?').all(req.userId);
-			console.log("=== 正在生成注册选项，检查参数 ===");
-			console.log("1. RP_ID:", RP_ID);
-			console.log("2. userID:", req.userId);
-			console.log("3. userName:", user.username);
+        console.log("=== 正在生成注册选项，检查参数 ===");
+        console.log("1. RP_ID:", RP_ID);
+        console.log("2. userID:", req.userId);
+        console.log("3. userName:", user.username);
         const options = await generateRegistrationOptions({
             rpName: '我的 AI 任务系统',
             rpID: RP_ID,
-            userID: new Uint8Array(Buffer.from(req.userId.toString())),
+			userID: new Uint8Array(Buffer.from(req.userId.toString())),
             userName: user.username,
             excludeCredentials: existingCreds.map(cred => ({
-                id: new Uint8Array(Buffer.from(cred.credential_id, 'base64')),
+                id: cred.credential_id,
                 type: 'public-key',
             })),
             authenticatorSelection: { residentKey: 'preferred', userVerification: 'preferred' },
@@ -177,7 +231,7 @@ app.get('/api/auth/register/options', strictAuthMiddleware, async (req, res) => 
         challengeStore.set(`reg_${req.userId}`, options.challenge);
         res.json(options);
     } catch (error) {
-	console.error('【生成注册选项报错完整信息】:', error);
+        console.error('【生成注册选项报错完整信息】:', error);
         res.status(500).json({ error: '生成注册选项失败' });
     }
 });
@@ -188,22 +242,29 @@ app.post('/api/auth/register/verify', strictAuthMiddleware, async (req, res) => 
         const expectedChallenge = challengeStore.get(`reg_${req.userId}`);
         if (!expectedChallenge) return res.status(400).json({ error: '请求超时或无效' });
 
+        // 调试日志：查看浏览器实际发送的 origin
+        try {
+            const clientData = JSON.parse(Buffer.from(req.body.response.clientDataJSON, 'base64url').toString());
+            console.log('【调试】浏览器实际 origin:', clientData.origin);
+            console.log('【调试】服务端期望 origin:', EXPECTED_ORIGIN);
+        } catch (e) { console.log('【调试】无法解析 clientDataJSON'); }
+
         const verification = await verifyRegistrationResponse({
             response: req.body,
             expectedChallenge,
             expectedOrigin: EXPECTED_ORIGIN,
             expectedRPID: RP_ID,
         });
+        
+        const { deviceName } = req.body; // 获取前端传来的设备名称
 
         if (verification.verified && verification.registrationInfo) {
-            const { credentialPublicKey, credentialID, counter } = verification.registrationInfo;
-            
-            // 将 Uint8Array 转换为 Base64 字符串存入 SQLite
-            const pubKeyBase64 = Buffer.from(credentialPublicKey).toString('base64');
-            const credIdBase64 = Buffer.from(credentialID).toString('base64');
+            const { credential } = verification.registrationInfo;
+            const pubKeyBase64 = Buffer.from(credential.publicKey).toString('base64');
+            const credIdBase64 = credential.id;
 
-            db.prepare('INSERT INTO webauthn_credentials (user_id, credential_id, public_key, counter) VALUES (?, ?, ?, ?)').run(
-                req.userId, credIdBase64, pubKeyBase64, counter
+            db.prepare('INSERT INTO webauthn_credentials (user_id, credential_id, public_key, counter, device_name) VALUES (?, ?, ?, ?, ?)').run(
+                req.userId, credIdBase64, pubKeyBase64, credential.counter, deviceName || '未知设备'
             );
 
             challengeStore.delete(`reg_${req.userId}`);
@@ -212,8 +273,8 @@ app.post('/api/auth/register/verify', strictAuthMiddleware, async (req, res) => 
             res.status(400).json({ error: '验证失败' });
         }
     } catch (error) {
-        console.error('Register Verify Error:', error);
-        res.status(500).json({ error: '设备绑定失败' });
+        console.error('【注册验证报错】:', error);
+        res.status(500).json({ error: '设备绑定失败: ' + error.message });
     }
 });
 
@@ -232,7 +293,7 @@ app.post('/api/auth/login/options', async (req, res) => {
         const options = await generateAuthenticationOptions({
             rpID: RP_ID,
             allowCredentials: credentials.map(cred => ({
-                id: Buffer.from(cred.credential_id, 'base64'),
+                id: cred.credential_id,
                 type: 'public-key',
             })),
             userVerification: 'preferred',
@@ -252,10 +313,9 @@ app.post('/api/auth/login/verify', async (req, res) => {
         const expectedChallenge = challengeStore.get(`login_${userId}`);
         if (!expectedChallenge) return res.status(400).json({ error: '登录会话已过期' });
 
-        // 查找对应的凭证
-        const credIdBase64 = assertion.id; 
+        const credIdBase64 = assertion.id;
         const cred = db.prepare('SELECT * FROM webauthn_credentials WHERE user_id = ? AND credential_id = ?').get(userId, credIdBase64);
-        
+
         if (!cred) return res.status(400).json({ error: '未找到匹配的设备' });
 
         const verification = await verifyAuthenticationResponse({
@@ -263,27 +323,25 @@ app.post('/api/auth/login/verify', async (req, res) => {
             expectedChallenge,
             expectedOrigin: EXPECTED_ORIGIN,
             expectedRPID: RP_ID,
-            authenticator: {
-                credentialPublicKey: Buffer.from(cred.public_key, 'base64'),
-                credentialID: Buffer.from(cred.credential_id, 'base64'),
+            credential: {
+                id: cred.credential_id,
+                publicKey: Buffer.from(cred.public_key, 'base64'),
                 counter: cred.counter,
             },
         });
 
         if (verification.verified) {
-            // 更新防克隆计数器
             db.prepare('UPDATE webauthn_credentials SET counter = ? WHERE id = ?').run(verification.authenticationInfo.newCounter, cred.id);
             challengeStore.delete(`login_${userId}`);
 
-            // 签发 JWT Token（复用你之前的登录逻辑）
             const token = jwt.sign({ userId: cred.user_id }, JWT_SECRET, { expiresIn: '7d' });
             res.json({ success: true, token, message: '通行证认证成功' });
         } else {
             res.status(400).json({ error: '签名验证失败' });
         }
     } catch (error) {
-        console.error('Login Verify Error:', error);
-        res.status(500).json({ error: '系统内部错误' });
+        console.error('【登录验证报错】:', error);
+        res.status(500).json({ error: '系统内部错误: ' + error.message });
     }
 });
 
@@ -292,10 +350,9 @@ app.post('/api/auth/login/verify', async (req, res) => {
 //  获取当前用户的通行证列表
 app.get('/api/auth/credentials', strictAuthMiddleware, (req, res) => {
     try {
-        // 安全起见：只返回凭证的内部 id 和创建时间给前端用于展示
-        // 绝对不要将 public_key 和 credential_id 的具体内容返回给前端
-        const credentials = db.prepare('SELECT id, created_at FROM webauthn_credentials WHERE user_id = ? ORDER BY created_at DESC').all(req.userId);
-        
+        // 安全起见：只返回凭证的内部 id、设备名和创建时间
+        const credentials = db.prepare('SELECT id, device_name, created_at FROM webauthn_credentials WHERE user_id = ? ORDER BY created_at DESC').all(req.userId);
+
         res.json(credentials);
     } catch (error) {
         console.error('Fetch Credentials Error:', error);
@@ -306,12 +363,12 @@ app.get('/api/auth/credentials', strictAuthMiddleware, (req, res) => {
 //  删除（解绑）指定的通行证
 app.delete('/api/auth/credentials/:id', strictAuthMiddleware, (req, res) => {
     const credId = req.params.id;
-    
+
     try {
         // 安全检查：必须同时匹配 id 和当前请求的 user_id
         // 这能防止恶意用户通过遍历 id 来删除其他人的凭证（防越权漏洞）
         const info = db.prepare('DELETE FROM webauthn_credentials WHERE id = ? AND user_id = ?').run(credId, req.userId);
-        
+
         if (info.changes > 0) {
             res.json({ success: true, message: '设备解绑成功' });
         } else {
@@ -320,6 +377,25 @@ app.delete('/api/auth/credentials/:id', strictAuthMiddleware, (req, res) => {
     } catch (error) {
         console.error('Delete Credential Error:', error);
         res.status(500).json({ error: '删除通行证失败' });
+    }
+});
+
+//  修改通行证设备名称 (需要已登录)
+app.put('/api/auth/credentials/:id', strictAuthMiddleware, (req, res) => {
+    const credId = req.params.id;
+    const { deviceName } = req.body;
+    if (!deviceName) return res.status(400).json({ error: '设备名称不能为空' });
+
+    try {
+        const info = db.prepare('UPDATE webauthn_credentials SET device_name = ? WHERE id = ? AND user_id = ?').run(deviceName, credId, req.userId);
+        if (info.changes > 0) {
+            res.json({ success: true, message: '设备名称已更新' });
+        } else {
+            res.status(404).json({ error: '通行证不存在或无权修改' });
+        }
+    } catch (error) {
+        console.error('Update Credential Name Error:', error);
+        res.status(500).json({ error: '更新设备名称失败' });
     }
 });
 
@@ -338,6 +414,7 @@ app.get('/api/history', strictAuthMiddleware, (req, res) => {
 
 //  任务拆解接口 (无状态)
 app.post('/api/decompose', async (req, res) => {
+    const config = getAIConfig(req);
     try {
         const { taskText, images } = req.body;
         let userContent;
@@ -351,14 +428,25 @@ app.post('/api/decompose', async (req, res) => {
         }
 
         const messages = [
-            { role: 'system', content: `用中文回复。你是一名专业的任务拆解专家，请按照逻辑链将任务拆分为细小步骤。每个小步骤的 parentId 应为上一步骤的 id（若为根节点则为 null）。你必须且只能严格按照 JSON 数组格式输出，不包含任何 Markdown 标签。格式要求：[{"id": "唯一数字或字符串", "parentId": "父节点 id", "title": "步骤名称", "desc": "具体操作内容"}] `},
+            { role: 'system', content: `用中文回复。你是一名专业的任务拆解专家，请按照逻辑链将任务拆分为细小步骤。每个小步骤的 parentId 应为上一步骤的 id（若为根节点则为 null）。你必须且只能严格按照 JSON 数组格式输出，不包含任何 Markdown 标签。格式要求：[{"id": "唯一数字或字符串", "parentId": "父节点 id", "title": "步骤名称", "desc": "具体操作内容"}] ` },
             { role: 'user', content: userContent }
         ];
 
+        // 构建请求负载
+        const requestData = {
+            model: config.model,
+            messages: messages,
+            stream: true,
+            "thinking": { "type": "disabled" },
+            ...config.customBody
+        };
+
         const response = await axios({
-            method: 'post', url: API_URL, responseType: 'stream',
-            headers: { 'Authorization': `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
-            data: { model: 'glm-4.6v', messages: messages, stream: true, "thinking": { "type": "disabled" } }
+            method: 'post', 
+            url: config.apiUrl, 
+            responseType: 'stream',
+            headers: { 'Authorization': `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+            data: requestData
         });
 
         res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -368,12 +456,14 @@ app.post('/api/decompose', async (req, res) => {
 
     } catch (error) {
         console.error('Decompose request failed:', error.message);
-        res.status(500).json({ error: 'Backend processing failed' });
+        const errorMsg = error.response && error.response.data ? JSON.stringify(error.response.data) : error.message;
+        res.status(500).json({ error: `Backend processing failed: ${errorMsg}` });
     }
 });
 
 //  节点对话接口 (宽松鉴权 + 数据双写)
 app.post('/api/ask', optionalAuthMiddleware, async (req, res) => {
+    const config = getAIConfig(req);
     const { nodeId, title, desc, userQuestion } = req.body;
     const userId = req.userId; // 可能是 null(访客) 或 具体ID(已登录)
 
@@ -402,10 +492,20 @@ app.post('/api/ask', optionalAuthMiddleware, async (req, res) => {
         messages.push({ role: 'user', content: currentQuestion });
 
         // --- 4. 发起 SSE 流式请求 ---
+        const requestData = {
+            model: config.model,
+            messages: messages,
+            stream: true,
+            "thinking": { "type": "disabled" },
+            ...config.customBody
+        };
+
         const response = await axios({
-            method: 'post', url: API_URL, responseType: 'stream',
-            headers: { 'Authorization': `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
-            data: { model: 'glm-4.6v', messages: messages, stream: true ,"thinking": {"type": "disabled" }}
+            method: 'post', 
+            url: config.apiUrl, 
+            responseType: 'stream',
+            headers: { 'Authorization': `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+            data: requestData
         });
 
         res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -414,14 +514,14 @@ app.post('/api/ask', optionalAuthMiddleware, async (req, res) => {
 
         let aiAnswer = '';
         response.data.on('data', chunk => {
-            res.write(chunk); 
+            res.write(chunk);
             const lines = chunk.toString().split('\n');
             for (const line of lines) {
                 if (line.trim().startsWith('data: ') && !line.includes('[DONE]')) {
                     try {
                         const data = JSON.parse(line.trim().slice(6));
                         if (data.choices?.[0]?.delta?.content) aiAnswer += data.choices[0].delta.content;
-                    } catch(e) {}
+                    } catch (e) { }
                 }
             }
         });
@@ -429,7 +529,7 @@ app.post('/api/ask', optionalAuthMiddleware, async (req, res) => {
         // --- 5. 请求结束处理 (写历史与上下文压缩) ---
         response.data.on('end', async () => {
             res.end();
-            
+
             // 写入 AI 回复到全量历史
             if (userId && aiAnswer) {
                 db.prepare('INSERT INTO chat_history (user_id, node_id, role, content) VALUES (?, ?, ?, ?)').run(userId, nodeId, 'assistant', aiAnswer);
@@ -439,13 +539,13 @@ app.post('/api/ask', optionalAuthMiddleware, async (req, res) => {
             recentChat.push({ role: 'assistant', content: aiAnswer });
             let newCount = nodeState.chat_count + 1;
 
-            if (newCount >= 4) { 
-                console.log(`[Node ${nodeId}] Triggering GLM-4.6V-FlashX context compression...`);
+            if (newCount >= 4) {
+                console.log(`[Node ${nodeId}] Triggering context compression...`);
                 const summaryMessages = [
                     { role: 'system', content: '你是一名文本摘要助手。' },
                     { role: 'user', content: `请用中文回复。请将以下历史执行进度总结为不超过 200 字的简洁摘要，保留核心进展与待办事项。\n已有的总结: ${nodeState.summary}\n最新对话: ${JSON.stringify(recentChat)}` }
                 ];
-                const newSummary = await callLLMSummary(summaryMessages);
+                const newSummary = await callLLMSummary(summaryMessages, config);
                 db.prepare('UPDATE node_states SET summary = ?, recent_chat = ?, chat_count = ? WHERE node_id = ?').run(newSummary, '[]', 0, nodeId);
             } else {
                 db.prepare('UPDATE node_states SET recent_chat = ?, chat_count = ? WHERE node_id = ?').run(JSON.stringify(recentChat), newCount, nodeId);
@@ -454,7 +554,8 @@ app.post('/api/ask', optionalAuthMiddleware, async (req, res) => {
 
     } catch (error) {
         console.error('Ask request failed:', error.message);
-        if (!res.headersSent) res.status(500).json({ error: 'Backend processing failed' });
+        const errorMsg = error.response && error.response.data ? JSON.stringify(error.response.data) : error.message;
+        if (!res.headersSent) res.status(500).json({ error: `Backend processing failed: ${errorMsg}` });
     }
 });
 
@@ -490,10 +591,12 @@ app.post('/api/import', async (req, res) => {
         { role: 'user', content: contentList }
     ];
 
+    const config = getAIConfig(req);
+
     try {
-        const fullContent = await callLLMSummary(messages);
+        const fullContent = await callLLMSummary(messages, config);
         const chunkData = { choices: [{ delta: { content: fullContent } }] };
-        
+
         res.write(`data: ${JSON.stringify(chunkData)}\n\n`);
         res.write('data: [DONE]\n\n');
     } catch (error) {
@@ -508,17 +611,6 @@ app.post('/api/import', async (req, res) => {
 
 // ================= 整树状态接口 =================
 
-// 保存一棵完整的任务树快照
-app.post('/api/trees', strictAuthMiddleware, (req, res) => {
-    const { title, tree_data } = req.body;
-    try {
-        db.prepare('INSERT INTO user_trees (user_id, title, tree_data) VALUES (?, ?, ?)').run(req.userId, title, JSON.stringify(tree_data));
-        res.json({ success: true });
-    } catch (err) {
-        console.error('保存树失败:', err);
-        res.status(500).json({ error: '保存历史记录失败' });
-    }
-});
 
 // 获取当前用户的历史树列表
 app.get('/api/trees', strictAuthMiddleware, (req, res) => {
@@ -567,3 +659,87 @@ app.put('/api/trees/:id', strictAuthMiddleware, (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Backend proxy and compression engine started, listening on port: ${PORT}`));
+
+// ================= 全局树 Q&A 接口 (无鉴权) =================
+
+// 1. 全局问答对话接口
+app.post('/api/chat-tree', async (req, res) => {
+    const config = getAIConfig(req);
+    const { treeId, treeData, question, history = [] } = req.body;
+
+    try {
+        const messages = [
+            {
+                role: 'system',
+                content: `你是一个全方位的项目分析专家。用户已经将任务拆解为如下树状结构：
+${JSON.stringify(treeData.mainNodes)}
+每个节点可能还包含如下执行进度：
+${JSON.stringify(treeData.progressNodes)}
+
+请结合整个任务树的结构、逻辑关联以及已有的进度信息，回答用户关于该项目的全局性、总结性或协调性问题。你应当能够指出关键路径、风险点以及资源分配建议等。请用中文回答。`
+            }
+        ];
+
+        // 添加历史记录
+        messages.push(...history);
+        messages.push({ role: 'user', content: question });
+
+        const requestData = {
+            model: config.model,
+            messages: messages,
+            stream: true,
+            "thinking": { "type": "disabled" },
+            ...config.customBody
+        };
+
+        const response = await axios({
+            method: 'post', 
+            url: config.apiUrl, 
+            responseType: 'stream',
+            headers: { 'Authorization': `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+            data: requestData
+        });
+
+        res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+
+        let aiAnswer = '';
+        response.data.on('data', chunk => {
+            res.write(chunk);
+            const lines = chunk.toString().split('\n');
+            for (const line of lines) {
+                if (line.trim().startsWith('data: ') && !line.includes('[DONE]')) {
+                    try {
+                        const data = JSON.parse(line.trim().slice(6));
+                        if (data.choices?.[0]?.delta?.content) aiAnswer += data.choices[0].delta.content;
+                    } catch (e) { }
+                }
+            }
+        });
+
+        response.data.on('end', () => {
+            res.end();
+            // 如果提供了 treeId，保存到数据库
+            if (treeId && aiAnswer) {
+                db.prepare('INSERT INTO global_chat_history (tree_id, role, content) VALUES (?, ?, ?)').run(treeId, 'user', question);
+                db.prepare('INSERT INTO global_chat_history (tree_id, role, content) VALUES (?, ?, ?)').run(treeId, 'assistant', aiAnswer);
+            }
+        });
+
+    } catch (error) {
+        console.error('Chat-tree request failed:', error.message);
+        const errorMsg = error.response && error.response.data ? JSON.stringify(error.response.data) : error.message;
+        if (!res.headersSent) res.status(500).json({ error: `Backend processing failed: ${errorMsg}` });
+    }
+});
+
+// 2. 获取全局对话历史 (无鉴权)
+app.get('/api/chat-tree/history/:treeId', (req, res) => {
+    try {
+        const history = db.prepare('SELECT role, content, created_at FROM global_chat_history WHERE tree_id = ? ORDER BY created_at ASC').all(req.params.treeId);
+        res.json(history);
+    } catch (error) {
+        res.status(500).json({ error: '获取历史记录失败' });
+    }
+});
