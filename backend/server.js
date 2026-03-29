@@ -126,6 +126,36 @@ const strictAuthMiddleware = (req, res, next) => {
     });
 };
 
+// 帮助提取 Axios 错误信息 (特别是支持 stream 模式下的错误)
+async function getAxiosError(error) {
+    if (!error.response) return error.message;
+    const status = error.response.status;
+    
+    // 如果是 stream，需要尝试读取数据
+    if (error.response.data && typeof error.response.data.on === 'function') {
+        try {
+            const body = await new Promise((resolve) => {
+                let data = '';
+                error.response.data.on('data', chunk => { data += chunk; });
+                error.response.data.on('end', () => { resolve(data); });
+                error.response.data.on('error', () => { resolve(''); });
+                setTimeout(() => resolve(''), 1000); // 1秒超时
+            });
+            return `Status ${status}: ${body || error.message}`;
+        } catch (e) {
+            return `Status ${status}: ${error.message}`;
+        }
+    }
+    
+    // 非 stream 模式且有 data
+    try {
+        const body = typeof error.response.data === 'string' ? error.response.data : JSON.stringify(error.response.data);
+        return `Status ${status}: ${body}`;
+    } catch (e) {
+        return `Status ${status}: ${error.message}`;
+    }
+}
+
 // 动态获取 AI 配置 (开发者模式支持)
 function getAIConfig(req) {
     const devKey = req.headers['x-dev-key'];
@@ -455,10 +485,8 @@ app.post('/api/decompose', async (req, res) => {
         response.data.pipe(res);
 
     } catch (error) {
-        console.error('Decompose request failed:', error.message);
-        const errorMsg = error.response && error.response.data
-            ? util.format('%j', error.response.data) // %j 会尝试序列化 JSON，失败时会妥善处理
-            : error.message;
+        const errorMsg = await getAxiosError(error);
+        console.error('Decompose request failed:', errorMsg);
         res.status(500).json({ error: `Backend processing failed: ${errorMsg}` });
     }
 });
@@ -555,8 +583,8 @@ app.post('/api/ask', optionalAuthMiddleware, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Ask request failed:', error.message);
-        const errorMsg = error.response && error.response.data ? JSON.stringify(error.response.data) : error.message;
+        const errorMsg = await getAxiosError(error);
+        console.error('Ask request failed:', errorMsg);
         if (!res.headersSent) res.status(500).json({ error: `Backend processing failed: ${errorMsg}` });
     }
 });
@@ -730,8 +758,8 @@ ${JSON.stringify(treeData.progressNodes)}
         });
 
     } catch (error) {
-        console.error('Chat-tree request failed:', error.message);
-        const errorMsg = error.response && error.response.data ? JSON.stringify(error.response.data) : error.message;
+        const errorMsg = await getAxiosError(error);
+        console.error('Chat-tree request failed:', errorMsg);
         if (!res.headersSent) res.status(500).json({ error: `Backend processing failed: ${errorMsg}` });
     }
 });
