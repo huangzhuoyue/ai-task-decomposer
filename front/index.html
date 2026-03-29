@@ -1590,6 +1590,23 @@
 
             <hr style="border: none; border-top: 1px solid var(--md-sys-color-outline-variant); margin: 24px 0;">
 
+            <!-- 绑定邮箱区域 -->
+            <div class="form-section">
+                <div class="section-title"><span class="material-icons-round">mail</span> 绑定邮箱</div>
+                <div style="font-size: 13px; color: var(--md-sys-color-on-surface-variant); margin-bottom: 12px; line-height: 1.5;">
+                    绑定邮箱后可通过邮件验证码找回密码。
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="email" id="bindEmailInput" class="md-textfield" placeholder="请输入邮箱地址" style="flex: 1;">
+                    <button class="md-button md-button-primary" id="bindEmailBtn" style="white-space: nowrap; padding: 0 16px; height: 44px; min-width: 80px;">
+                        保存
+                    </button>
+                </div>
+                <div id="bindEmailMsg" style="font-size: 13px; margin-top: 8px; min-height: 18px;"></div>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid var(--md-sys-color-outline-variant); margin: 24px 0;">
+
             <div class="form-section">
                 <div class="section-title"><span class="material-icons-round">settings_applications</span> 开发者模式 (自定义 API)</div>
                 <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
@@ -2602,6 +2619,7 @@
                 authBtn.onclick = () => {
                     accountPanel.classList.add('visible'); // 弹出个人面板
                     loadPasskeys(); // 加载通行证列表
+                    loadBindEmail(); // 加载已绑定邮箱
                 };
                 loadHistoryList();
             } else {
@@ -2648,6 +2666,61 @@
                 setCrossDomainCookie('jwt_token', '', -1); // 清除 Cookie
                 accountPanel.classList.remove('visible');
                 updateAuthState();
+            }
+        });
+
+        // ================= 绑定邮箱逻辑 =================
+        // 加载已绑定邮箱（从 JWT payload 解析不到，通过接口或 localStorage 缓存）
+        async function loadBindEmail() {
+            const token = localStorage.getItem('jwt_token');
+            const input = document.getElementById('bindEmailInput');
+            const msg = document.getElementById('bindEmailMsg');
+            if (!token || !input) return;
+            // 从 localStorage 读取缓存的邮箱
+            const cached = localStorage.getItem('bound_email');
+            if (cached) {
+                input.value = cached;
+                msg.style.color = 'var(--md-sys-color-outline)';
+                msg.innerText = `当前已绑定：${cached}`;
+            } else {
+                input.value = '';
+                msg.innerText = '';
+            }
+        }
+
+        document.getElementById('bindEmailBtn').addEventListener('click', async () => {
+            const token = localStorage.getItem('jwt_token');
+            const email = document.getElementById('bindEmailInput').value.trim();
+            const msg = document.getElementById('bindEmailMsg');
+            const btn = document.getElementById('bindEmailBtn');
+            msg.style.color = '#D32F2F';
+            if (!email) { msg.innerText = '邮箱不能为空'; return; }
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { msg.innerText = '邮箱格式不正确'; return; }
+            if (!token) { msg.innerText = '请先登录'; return; }
+
+            btn.disabled = true;
+            btn.innerText = '保存中...';
+            msg.innerText = '';
+
+            try {
+                const res = await fetch(`${API_BASE}/api/user/email`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ email })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    localStorage.setItem('bound_email', email);
+                    msg.style.color = '#388E3C';
+                    msg.innerText = '邮箱绑定成功！';
+                } else {
+                    msg.innerText = data.error || '绑定失败';
+                }
+            } catch (err) {
+                msg.innerText = '网络错误，请稍后重试';
+            } finally {
+                btn.disabled = false;
+                btn.innerText = '保存';
             }
         });
 
