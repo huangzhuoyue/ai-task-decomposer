@@ -268,7 +268,7 @@
 			background: #f3eff7;
 		}
 
-		/* MD3 对话框样式（已有，保持） */
+		/* MD3 对话框样式 */
 		.md-dialog-overlay {
 			display: none;
 			position: fixed;
@@ -283,6 +283,56 @@
 		}
 		.md-dialog-overlay.visible {
 			display: flex;
+		}
+		.md-dialog {
+			background: #fff;
+			border-radius: 28px;
+			padding: 24px;
+			min-width: 280px;
+			max-width: 90%;
+			box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+		}
+		.md-dialog-title {
+			font-size: 24px;
+			font-weight: 500;
+			margin-bottom: 16px;
+			color: var(--md-sys-color-on-surface);
+		}
+		.md-dialog-content {
+			margin-bottom: 24px;
+			color: #49454F;
+			line-height: 1.5;
+		}
+		.md-dialog-content p {
+			margin: 0;
+		}
+		.md-dialog-actions {
+			display: flex;
+			justify-content: flex-end;
+			gap: 12px;
+		}
+		.md-dialog-btn {
+			padding: 10px 24px;
+			border-radius: 20px;
+			border: none;
+			font-size: 14px;
+			font-weight: 500;
+			cursor: pointer;
+			transition: background 0.2s;
+		}
+		.md-dialog-btn:not(.md-button-primary) {
+			background: transparent;
+			color: var(--md-sys-color-primary);
+		}
+		.md-dialog-btn:not(.md-button-primary):hover {
+			background: rgba(103, 80, 164, 0.08);
+		}
+		.md-dialog-btn.md-button-primary {
+			background: var(--md-sys-color-primary);
+			color: #fff;
+		}
+		.md-dialog-btn.md-button-primary:hover {
+			background: #5f4a8a;
 		}
 	</style>
 </head>
@@ -412,6 +462,8 @@
 
                 elements.mdDialogConfirm.innerText = confirmText;
                 elements.mdDialogCancel.innerText = cancelText;
+                elements.mdDialogConfirm.classList.add('md-button-primary');
+                elements.mdDialogCancel.classList.remove('md-button-primary');
                 elements.mdDialogOverlay.classList.add('visible');
 
                 const cleanup = (result) => {
