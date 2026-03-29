@@ -118,6 +118,157 @@
 			margin-top: 8px;
 			min-height: 18px;
 		}
+
+		.forgot-link {
+			display: inline-block;
+			margin-top: 4px;
+			margin-bottom: 4px;
+			color: var(--md-sys-color-outline);
+			text-decoration: none;
+			font-size: 13px;
+			cursor: pointer;
+			float: right;
+			transition: color 0.2s;
+		}
+
+		.forgot-link:hover {
+			color: var(--md-sys-color-primary);
+		}
+
+		/* ===== 找回密码弹窗 ===== */
+		.reset-overlay {
+			display: none;
+			position: fixed;
+			inset: 0;
+			background: rgba(0, 0, 0, 0.4);
+			z-index: 1000;
+			align-items: center;
+			justify-content: center;
+		}
+
+		.reset-overlay.visible {
+			display: flex;
+		}
+
+		.reset-dialog {
+			background: #fff;
+			padding: 36px 32px 28px;
+			border-radius: 24px;
+			box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+			width: 100%;
+			max-width: 380px;
+			text-align: center;
+			position: relative;
+		}
+
+		.reset-dialog h3 {
+			font-size: 20px;
+			font-weight: 600;
+			margin-bottom: 6px;
+			color: var(--md-sys-color-on-surface);
+		}
+
+		.reset-dialog .subtitle {
+			font-size: 13px;
+			color: var(--md-sys-color-outline);
+			margin-bottom: 22px;
+		}
+
+		.reset-step {
+			display: none;
+		}
+
+		.reset-step.active {
+			display: block;
+		}
+
+		.reset-input {
+			width: 100%;
+			padding: 13px 16px;
+			border: 1px solid var(--md-sys-color-outline);
+			border-radius: 12px;
+			font-size: 15px;
+			margin-bottom: 12px;
+			transition: 0.2s;
+			font-family: inherit;
+		}
+
+		.reset-input:focus {
+			outline: none;
+			border-color: var(--md-sys-color-primary);
+			border-width: 2px;
+			padding: 12px 15px;
+		}
+
+		.code-row {
+			display: flex;
+			gap: 10px;
+			margin-bottom: 12px;
+		}
+
+		.code-row .reset-input {
+			flex: 1;
+			margin-bottom: 0;
+			letter-spacing: 6px;
+			font-size: 20px;
+			text-align: center;
+			font-weight: 600;
+		}
+
+		.send-code-btn {
+			padding: 0 16px;
+			height: 48px;
+			background: var(--md-sys-color-primary-container);
+			color: var(--md-sys-color-primary);
+			border: none;
+			border-radius: 12px;
+			font-size: 13px;
+			font-weight: 600;
+			cursor: pointer;
+			white-space: nowrap;
+			transition: 0.2s;
+			font-family: inherit;
+		}
+
+		.send-code-btn:disabled {
+			opacity: 0.5;
+			cursor: not-allowed;
+		}
+
+		.reset-error {
+			color: #D32F2F;
+			font-size: 13px;
+			margin-bottom: 10px;
+			min-height: 18px;
+			text-align: left;
+		}
+
+		.reset-success-icon {
+			font-size: 52px;
+			color: #388E3C;
+			margin-bottom: 12px;
+		}
+
+		.reset-close-btn {
+			position: absolute;
+			top: 16px;
+			right: 16px;
+			background: none;
+			border: none;
+			cursor: pointer;
+			color: var(--md-sys-color-outline);
+			font-size: 22px;
+			line-height: 1;
+			padding: 4px;
+			border-radius: 50%;
+			transition: background 0.2s;
+		}
+
+		.reset-close-btn:hover {
+			background: #f3eff7;
+		}
+
+		/* MD3 对话框样式（已有，保持） */
 	</style>
 </head>
 
@@ -134,6 +285,7 @@
 			</div>
 			<div class="input-group">
 				<input type="password" id="password" placeholder="请输入密码 (通行证登录可不填)">
+				<span class="forgot-link" id="forgotPasswordLink">忘记密码？</span>
 			</div>
 			<div class="error-msg" id="errorMsg"></div>
 			<button type="submit" class="md-button" id="submitBtn">登录 / 注册</button>
@@ -144,6 +296,46 @@
 
 		<a href="index.html" class="back-link">暂不登录，以访客身份继续访问</a>
 	</div>
+
+    <!-- 找回密码弹窗 -->
+    <div class="reset-overlay" id="resetOverlay">
+        <div class="reset-dialog">
+            <button class="reset-close-btn" id="resetCloseBtn" title="关闭">&#10005;</button>
+
+            <!-- Step 1: 输入用户名，发送验证码 -->
+            <div class="reset-step active" id="resetStep1">
+                <span class="material-icons-round" style="font-size:40px;color:var(--md-sys-color-primary);margin-bottom:10px;">lock_reset</span>
+                <h3>找回密码</h3>
+                <p class="subtitle">输入账号用户名，系统将向绑定的邮箱发送验证码</p>
+                <input class="reset-input" type="text" id="resetUsername" placeholder="请输入用户名">
+                <div class="reset-error" id="resetError1"></div>
+                <button class="md-button" id="resetSendBtn" style="margin-top:4px;">发送验证码</button>
+            </div>
+
+            <!-- Step 2: 输入验证码 + 新密码 -->
+            <div class="reset-step" id="resetStep2">
+                <span class="material-icons-round" style="font-size:40px;color:var(--md-sys-color-primary);margin-bottom:10px;">mark_email_read</span>
+                <h3>输入验证码</h3>
+                <p class="subtitle" id="resetEmailHint">验证码已发送，请查收邮件</p>
+                <div class="code-row">
+                    <input class="reset-input" type="text" id="resetCode" placeholder="6位验证码" maxlength="6" inputmode="numeric">
+                    <button class="send-code-btn" id="resendBtn">重新发送</button>
+                </div>
+                <input class="reset-input" type="password" id="resetNewPwd" placeholder="设置新密码（至少6位）">
+                <input class="reset-input" type="password" id="resetConfirmPwd" placeholder="再次确认新密码">
+                <div class="reset-error" id="resetError2"></div>
+                <button class="md-button" id="resetConfirmBtn" style="margin-top:4px;">确认重置密码</button>
+            </div>
+
+            <!-- Step 3: 重置成功 -->
+            <div class="reset-step" id="resetStep3">
+                <span class="material-icons-round reset-success-icon">check_circle</span>
+                <h3>密码已重置</h3>
+                <p class="subtitle">你的密码已成功重置，请使用新密码登录</p>
+                <button class="md-button" id="resetGoLoginBtn" style="margin-top:8px;">立即登录</button>
+            </div>
+        </div>
+    </div>
 
     <!-- 通用 MD3 对话框结构 -->
     <div class="md-dialog-overlay" id="mdDialogOverlay">
@@ -391,6 +583,178 @@
 				passkeyBtn.disabled = false;
 				passkeyBtn.innerText = '使用生物识别 / 通行证登录';
 			}
+		});
+		// ================= 4. 找回密码逻辑 =================
+		const resetOverlay = document.getElementById('resetOverlay');
+		const resetCloseBtn = document.getElementById('resetCloseBtn');
+		const forgotPasswordLink = document.getElementById('forgotPasswordLink');
+
+		// 打开 / 关闭弹窗
+		forgotPasswordLink.addEventListener('click', () => {
+			// 预填当前输入框中的用户名
+			const currentUsername = document.getElementById('username').value.trim();
+			if (currentUsername) document.getElementById('resetUsername').value = currentUsername;
+			resetToStep(1);
+			resetOverlay.classList.add('visible');
+		});
+
+		resetCloseBtn.addEventListener('click', () => {
+			resetOverlay.classList.remove('visible');
+		});
+
+		resetOverlay.addEventListener('click', (e) => {
+			if (e.target === resetOverlay) resetOverlay.classList.remove('visible');
+		});
+
+		// 步骤切换
+		function resetToStep(step) {
+			document.querySelectorAll('.reset-step').forEach(el => el.classList.remove('active'));
+			document.getElementById(`resetStep${step}`).classList.add('active');
+			document.getElementById('resetError1') && (document.getElementById('resetError1').innerText = '');
+			document.getElementById('resetError2') && (document.getElementById('resetError2').innerText = '');
+		}
+
+		// 倒计时控制
+		let countdownTimer = null;
+		function startCountdown(btn, seconds = 60) {
+			btn.disabled = true;
+			let remaining = seconds;
+			btn.innerText = `${remaining}s 后重发`;
+			countdownTimer = setInterval(() => {
+				remaining--;
+				if (remaining <= 0) {
+					clearInterval(countdownTimer);
+					btn.disabled = false;
+					btn.innerText = '重新发送';
+				} else {
+					btn.innerText = `${remaining}s 后重发`;
+				}
+			}, 1000);
+		}
+
+		// 发送重置码（Step 1 → Step 2）
+		async function sendResetCode() {
+			const username = document.getElementById('resetUsername').value.trim();
+			const errEl = document.getElementById('resetError1');
+			const sendBtn = document.getElementById('resetSendBtn');
+			if (!username) { errEl.innerText = '请输入用户名'; return; }
+
+			sendBtn.disabled = true;
+			sendBtn.innerText = '发送中...';
+			errEl.innerText = '';
+
+			try {
+				const res = await fetch(`${API_BASE}/password/send-reset-code`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ username })
+				});
+				const data = await res.json();
+
+				if (res.ok) {
+					// 跳到 step 2
+					const hint = data.maskedEmail
+						? `验证码已发送至 ${data.maskedEmail}，5 分钟内有效`
+						: (data.message || '验证码已生成');
+					document.getElementById('resetEmailHint').innerText = hint;
+
+					// 开发模式：如果返回了 devCode，自动填入（方便调试）
+					if (data.devCode) {
+						document.getElementById('resetCode').value = data.devCode;
+					}
+
+					resetToStep(2);
+					startCountdown(document.getElementById('resendBtn'));
+				} else {
+					errEl.innerText = data.error || '发送失败，请稍后重试';
+					sendBtn.disabled = false;
+					sendBtn.innerText = '发送验证码';
+				}
+			} catch (err) {
+				errEl.innerText = '网络错误，无法连接到服务器';
+				sendBtn.disabled = false;
+				sendBtn.innerText = '发送验证码';
+			}
+		}
+
+		document.getElementById('resetSendBtn').addEventListener('click', sendResetCode);
+
+		// 重新发送
+		document.getElementById('resendBtn').addEventListener('click', async () => {
+			const username = document.getElementById('resetUsername').value.trim();
+			const resendBtn = document.getElementById('resendBtn');
+			const errEl = document.getElementById('resetError2');
+			resendBtn.disabled = true;
+			errEl.innerText = '';
+			try {
+				const res = await fetch(`${API_BASE}/password/send-reset-code`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ username })
+				});
+				const data = await res.json();
+				if (res.ok) {
+					errEl.style.color = '#388E3C';
+					errEl.innerText = '验证码已重新发送，请查收邮件';
+					setTimeout(() => { errEl.style.color = '#D32F2F'; errEl.innerText = ''; }, 3000);
+					startCountdown(resendBtn);
+				} else {
+					errEl.innerText = data.error || '发送失败';
+					resendBtn.disabled = false;
+				}
+			} catch (err) {
+				errEl.innerText = '网络错误';
+				resendBtn.disabled = false;
+			}
+		});
+
+		// 确认重置密码（Step 2 → Step 3）
+		document.getElementById('resetConfirmBtn').addEventListener('click', async () => {
+			const username = document.getElementById('resetUsername').value.trim();
+			const code = document.getElementById('resetCode').value.trim();
+			const newPassword = document.getElementById('resetNewPwd').value;
+			const confirmPassword = document.getElementById('resetConfirmPwd').value;
+			const errEl = document.getElementById('resetError2');
+			const confirmBtn = document.getElementById('resetConfirmBtn');
+
+			errEl.innerText = '';
+			if (!code) { errEl.innerText = '请输入验证码'; return; }
+			if (!newPassword) { errEl.innerText = '请输入新密码'; return; }
+			if (newPassword.length < 6) { errEl.innerText = '密码至少需要 6 位'; return; }
+			if (newPassword !== confirmPassword) { errEl.innerText = '两次输入的密码不一致'; return; }
+
+			confirmBtn.disabled = true;
+			confirmBtn.innerText = '重置中...';
+
+			try {
+				const res = await fetch(`${API_BASE}/password/reset`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ username, code, newPassword })
+				});
+				const data = await res.json();
+
+				if (res.ok) {
+					if (countdownTimer) clearInterval(countdownTimer);
+					resetToStep(3);
+				} else {
+					errEl.innerText = data.error || '重置失败';
+					confirmBtn.disabled = false;
+					confirmBtn.innerText = '确认重置密码';
+				}
+			} catch (err) {
+				errEl.innerText = '网络错误，无法连接到服务器';
+				confirmBtn.disabled = false;
+				confirmBtn.innerText = '确认重置密码';
+			}
+		});
+
+		// 重置成功后，点击立即登录
+		document.getElementById('resetGoLoginBtn').addEventListener('click', () => {
+			resetOverlay.classList.remove('visible');
+			// 清空密码框，方便用新密码登录
+			document.getElementById('password').value = '';
+			document.getElementById('password').focus();
 		});
 	</script>
 </body>

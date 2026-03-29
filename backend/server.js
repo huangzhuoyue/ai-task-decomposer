@@ -6,6 +6,7 @@ const axios = require('axios');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const util = require('util');
+const nodemailer = require('nodemailer');
 
 const app = express();
 app.use(cors());
@@ -28,8 +29,39 @@ const EXPECTED_ORIGIN = process.env.EXPECTED_ORIGIN
     ? process.env.EXPECTED_ORIGIN.split(',').map(s => s.trim())
     : ['https://hzyweb.xyz', 'https://m.hzyweb.xyz'];
 
+// 腾讯邮箱 SMTP 配置
+const MAIL_USER = process.env.MAIL_USER || '';      // 你的 QQ/腾讯企业邮箱
+const MAIL_PASS = process.env.MAIL_PASS || '';      // 邮箱授权码（非登录密码）
+const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || 'AI任务拆解系统';
+
+// 创建腾讯邮箱发信器（支持 QQ 邮箱 和 腾讯企业邮箱）
+function createMailTransporter() {
+    // 判断是否为企业邮箱域名（非 qq.com / foxmail.com 视为企业邮箱）
+    const isQQ = /^.+@(qq\.com|foxmail\.com)$/i.test(MAIL_USER);
+    if (isQQ) {
+        // QQ 邮箱
+        return nodemailer.createTransport({
+            host: 'smtp.qq.com',
+            port: 465,
+            secure: true,
+            auth: { user: MAIL_USER, pass: MAIL_PASS }
+        });
+    } else {
+        // 腾讯企业邮箱
+        return nodemailer.createTransport({
+            host: 'smtp.exmail.qq.com',
+            port: 465,
+            secure: true,
+            auth: { user: MAIL_USER, pass: MAIL_PASS }
+        });
+    }
+}
+
 // 内存存储 Challenge（由于目前没有 Redis 等会话存储，使用 Map 暂存）
 const challengeStore = new Map();
+
+// 内存存储密码重置码（key: email, value: {code, userId, expireAt}）
+const resetCodeStore = new Map();
 
 // 数据库初始化与建表
 const db = new Database('ai_tasks.db');
@@ -93,6 +125,13 @@ db.exec(`
 // 数据库迁移：确保 webauthn_credentials 表中有 device_name 列
 try {
     db.prepare("ALTER TABLE webauthn_credentials ADD COLUMN device_name TEXT DEFAULT '未命名设备'").run();
+} catch (e) {
+    // 列可能已经存在，忽略错误
+}
+
+// 数据库迁移：确保 users 表中有 email 列
+try {
+    db.prepare("ALTER TABLE users ADD COLUMN email TEXT").run();
 } catch (e) {
     // 列可能已经存在，忽略错误
 }
@@ -226,6 +265,129 @@ app.post('/api/login', async (req, res) => {
     } catch (error) {
         console.error('Login Error:', error);
         res.status(500).json({ error: '服务器内部错误' });
+    }
+});
+
+
+
+// ================= 新增：密码找回 API =================
+
+// 2. 绑定/更新邮箱（需要已登录）
+app.post('/api/user/email', strictAuthMiddleware, async (req, res) => {
+    const { email } = req.body;
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ error: '邮箱格式不正确' });
+    }
+    try {
+        // 检查邮箱是否已被其他账户绑定
+        const existing = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email, req.userId);
+        if (existing) return res.status(409).json({ error: '该邮箱已被其他账户绑定' });
+        db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email, req.userId);
+        res.json({ success: true, message: '邮箱已更新' });
+    } catch (err) {
+        console.error('Update email error:', err);
+        res.status(500).json({ error: '更新邮箱失败' });
+    }
+});
+
+// 3. 发送重置码（不需要登录，需提供用户名）
+app.post('/api/password/send-reset-code', async (req, res) => {
+    const { username } = req.body;
+    if (!username) return res.status(400).json({ error: '请提供用户名' });
+
+    try {
+        const user = db.prepare('SELECT id, email FROM users WHERE username = ?').get(username);
+        if (!user) return res.status(404).json({ error: '用户名不存在' });
+        if (!user.email) return res.status(400).json({ error: '该账号尚未绑定邮箱，无法通过邮箱找回密码' });
+
+        // 频率限制：60 秒内只能发一次
+        const existing = resetCodeStore.get(user.email);
+        if (existing && existing.expireAt - 4 * 60 * 1000 > Date.now()) {
+            return res.status(429).json({ error: '发送过于频繁，请 60 秒后再试' });
+        }
+
+        // 生成 6 位随机验证码
+        const code = String(Math.floor(100000 + Math.random() * 900000));
+        const expireAt = Date.now() + 5 * 60 * 1000; // 5 分钟有效
+
+        resetCodeStore.set(user.email, { code, userId: user.id, expireAt });
+
+        // 定时清理
+        setTimeout(() => {
+            const entry = resetCodeStore.get(user.email);
+            if (entry && entry.code === code) resetCodeStore.delete(user.email);
+        }, 5 * 60 * 1000);
+
+        // 发送邮件
+        if (!MAIL_USER || !MAIL_PASS) {
+            // 未配置邮箱时，返回提示（开发模式，直接返回 code 用于调试）
+            console.warn('[密码找回] 邮件配置缺失，开发模式下直接返回验证码:', code);
+            return res.json({ success: true, message: '验证码已生成（邮件服务未配置，仅供开发调试）', devCode: code });
+        }
+
+        const transporter = createMailTransporter();
+        await transporter.sendMail({
+            from: `"${MAIL_FROM_NAME}" <${MAIL_USER}>`,
+            to: user.email,
+            subject: '【AI任务拆解系统】密码重置验证码',
+            html: `
+                <div style="font-family: 'Roboto', Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; border: 1px solid #e0e0e0; border-radius: 12px;">
+                    <h2 style="color: #6750A4; margin-bottom: 8px;">密码重置</h2>
+                    <p style="color: #49454F; margin-bottom: 24px;">你好，<b>${username}</b>！</p>
+                    <p style="color: #49454F;">你正在重置密码，验证码为：</p>
+                    <div style="background: #EADDFF; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0;">
+                        <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #6750A4;">${code}</span>
+                    </div>
+                    <p style="color: #79747E; font-size: 13px;">验证码 <b>5 分钟</b>内有效，请勿泄露给他人。</p>
+                    <p style="color: #79747E; font-size: 13px;">如果这不是你的操作，请忽略此邮件。</p>
+                    <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 24px 0;">
+                    <p style="color: #CAC4D0; font-size: 12px; text-align: center;">AI任务拆解系统 &nbsp;·&nbsp; 自动发送，请勿回复</p>
+                </div>
+            `
+        });
+
+        // 隐藏邮箱中间部分，返回给前端展示
+        const maskedEmail = user.email.replace(/(.{2}).+(@.+)/, '$1***$2');
+        res.json({ success: true, message: `验证码已发送至 ${maskedEmail}，请注意查收`, maskedEmail });
+    } catch (err) {
+        console.error('Send reset code error:', err);
+        res.status(500).json({ error: '发送邮件失败，请检查服务器邮件配置' });
+    }
+});
+
+// 4. 验证重置码并修改密码
+app.post('/api/password/reset', async (req, res) => {
+    const { username, code, newPassword } = req.body;
+    if (!username || !code || !newPassword) {
+        return res.status(400).json({ error: '参数不完整' });
+    }
+    if (newPassword.length < 6) {
+        return res.status(400).json({ error: '新密码至少需要 6 位' });
+    }
+
+    try {
+        const user = db.prepare('SELECT id, email FROM users WHERE username = ?').get(username);
+        if (!user || !user.email) return res.status(404).json({ error: '用户不存在或未绑定邮箱' });
+
+        const entry = resetCodeStore.get(user.email);
+        if (!entry) return res.status(400).json({ error: '验证码无效或已过期，请重新发送' });
+        if (Date.now() > entry.expireAt) {
+            resetCodeStore.delete(user.email);
+            return res.status(400).json({ error: '验证码已过期，请重新发送' });
+        }
+        if (entry.code !== String(code).trim()) {
+            return res.status(400).json({ error: '验证码错误' });
+        }
+
+        // 验证通过，更新密码
+        const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
+        db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashedPassword, user.id);
+        resetCodeStore.delete(user.email); // 用完即删
+
+        res.json({ success: true, message: '密码已重置，请使用新密码登录' });
+    } catch (err) {
+        console.error('Reset password error:', err);
+        res.status(500).json({ error: '重置密码失败' });
     }
 });
 
