@@ -183,7 +183,7 @@ app.get('/api/auth/register/options', strictAuthMiddleware, async (req, res) => 
         const options = await generateRegistrationOptions({
             rpName: '我的 AI 任务系统',
             rpID: RP_ID,
-			userID: new Uint8Array(Buffer.from(req.userId.toString())),
+            userID: new Uint8Array(Buffer.from(req.userId.toString())),
             userName: user.username,
             excludeCredentials: existingCreds.map(cred => ({
                 id: cred.credential_id,
@@ -220,7 +220,7 @@ app.post('/api/auth/register/verify', strictAuthMiddleware, async (req, res) => 
             expectedOrigin: EXPECTED_ORIGIN,
             expectedRPID: RP_ID,
         });
-        
+
         const { deviceName } = req.body; // 获取前端传来的设备名称
 
         if (verification.verified && verification.registrationInfo) {
@@ -510,7 +510,7 @@ app.post('/api/import', async (req, res) => {
     const IMPORT_PROMPT = `你是一个专业的数据结构转换引擎。用户将提供一张思维导图的图片，或者一份包含层级关系（如 Markdown 列表）的文档。
 你的唯一任务是：提取其中的节点和层级，将其转换为扁平化的 JSON 数组格式。
 规则：
-1. 必须且只能输出一个 JSON 数组。不要有任何 Markdown 代码块（\`\`\`json）或解释性文字。
+1. 必须且只能输出一个 JSON 数组。不要有任何 Markdown 代码块或解释性文字。
 2. 数组中的每个对象必须严格包含四个字段："id", "title", "desc", "parentId"（根节点 parentId 为 null）。
 3. 严禁改变原图或原文档中的逻辑层级和从属关系 。格式要求如下：
 [{
