@@ -620,7 +620,7 @@ app.post('/api/decompose', async (req, res) => {
         }
 
         const messages = [
-            { role: 'system', content: `用中文回复。你是一名专业的任务拆解专家，请按照逻辑链将任务拆分为细小步骤。每个小步骤的 parentId 应为上一步骤的 id（若为根节点则为 null）。你必须且只能严格按照 JSON 数组格式输出，不包含任何 Markdown 标签。格式要求：[{"id": "唯一数字或字符串", "parentId": "父节点 id", "title": "步骤名称", "desc": "具体操作内容"}] ` },
+            { role: 'system', content: `用中文回复。你是一名专业的任务拆解专家，请按照逻辑链将任务拆分为细小步骤。每个小步骤的 parentId 应为上一步骤的 id（若为根节点则为 null）。【隐私与安全强制策略】：如果用户的请求涉及非法操作、欺骗行为（如伪造证件、作弊代写）、色情、暴力、仇恨或任何违反公共内容安全政策的活动，请直接且仅返回：[{"id": "error", "parentId": null, "title": "安全审查受限", "desc": "此请求涵盖违反安全守则的敏感或受限内容，终止拆解计划。"}]。通过基础检查后，你必须且只能严格按照 JSON 数组格式输出，不包含任何 Markdown 标签。格式要求：[{"id": "编号", "parentId": "父节点 id", "title": "步骤名词", "desc": "具体操作内容"}]` },
             { role: 'user', content: userContent }
         ];
 
@@ -678,7 +678,7 @@ app.post('/api/ask', optionalAuthMiddleware, async (req, res) => {
         }
 
         // --- 3. 构建大模型上下文 ---
-        let messages = [{ role: 'system', content: `You are a project execution assistant. Current task: ${title}. Description: ${desc}. Please provide concise guidance directly.` }];
+        let messages = [{ role: 'system', content: `You are a project execution assistant. Current task: ${title}. Description: ${desc}. Please provide concise guidance directly. [Safety Policy]: If the question or task involves illegal, misleading (e.g. fake IDs, academic cheating), sexually explicit, violent, or hateful activities, strictly refuse to assist with a polite warning.` }];
         if (nodeState.summary) messages.push({ role: 'system', content: `[Previous Progress Memory]: ${nodeState.summary}` });
         messages.push(...recentChat);
         messages.push({ role: 'user', content: currentQuestion });
