@@ -1529,7 +1529,7 @@
                     accept=".txt,.md,image/png,image/jpeg,image/webp" multiple style="padding: 10px;">
                 <div
                     style="font-size: 12px; color: var(--md-sys-color-on-surface-variant); margin-top: 8px; line-height: 1.4;">
-                    *支持文本解析与图片直传（由 GLM-4.6V 多模态处理）。
+                    *支持文本解析与图片直传（由 AI 多模态处理）。
                 </div>
             </div>
             <div class="form-section">
@@ -1619,7 +1619,7 @@
                     <div class="field-label" style="font-size: 12px; color: var(--md-sys-color-primary); font-weight: 600;">BASE URL</div>
                     <input type="text" id="devBaseUrl" class="md-textfield" placeholder="默认: https://api.openai.com/v1">
                     <div class="field-label" style="font-size: 12px; color: var(--md-sys-color-primary); font-weight: 600;">MODEL NAME</div>
-                    <input type="text" id="devModel" class="md-textfield" placeholder="默认: glm-4.6v">
+                    <input type="text" id="devModel" class="md-textfield" placeholder="默认：系统模型">
                     <div class="field-label" style="font-size: 12px; color: var(--md-sys-color-primary); font-weight: 600;">CUSTOM BODY (JSON)</div>
                     <textarea id="devCustomBody" class="md-textfield md-textarea" style="min-height: 80px;" placeholder="例如: {&quot;temperature&quot;: 0.7}"></textarea>
                     <div style="font-size: 12px; color: var(--md-sys-color-on-surface-variant); line-height: 1.4;">
@@ -2027,7 +2027,7 @@
         let hitokotoInterval, hitokotoTimeout;
         function startWindowsLoading() {
             elements.treeRoot.style.transform = 'none';
-            elements.treeRoot.innerHTML = `<div class="win-install-screen" id="winInstallScreen"><div class="win-sentence-container" id="winSentence">正在使用 GLM-4.6V 思考...</div><div class="win-install-footer"><span class="material-icons-round spin-ccw">sync</span><span>AI生成中...</span></div></div>`;
+            elements.treeRoot.innerHTML = `<div class="win-install-screen" id="winInstallScreen"><div class="win-sentence-container" id="winSentence">AI 正在思考...</div><div class="win-install-footer"><span class="material-icons-round spin-ccw">sync</span><span>AI生成中...</span></div></div>`;
             const sentenceEl = document.getElementById('winSentence');
             setTimeout(() => { if (sentenceEl) sentenceEl.classList.add('visible'); }, 100);
             const fetchAndShow = async () => {

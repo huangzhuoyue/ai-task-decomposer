@@ -1077,7 +1077,7 @@
 
     <!-- Loading Screen -->
     <div class="win-install-screen" id="winLoader">
-        <div class="win-sentence-container" id="winSentence">GLM-4.6v 正在思考...</div>
+        <div class="win-sentence-container" id="winSentence">AI 正在思考...</div>
         <div class="win-install-footer">
             <span class="material-icons-round spin-ccw">sync</span>
             <span>AI 任务分解中，请稍候...</span>
@@ -1108,7 +1108,7 @@
                 <div class="section-label"><span class="material-icons-round">attach_file</span>附件参考</div>
                 <input type="file" id="fileInput" class="file-input" accept=".txt,.md,image/png,image/jpeg,image/webp"
                     multiple>
-                <div class="file-hint">*支持文本解析与图片直传（由 GLM-4.6V 多模态处理）。</div>
+                <div class="file-hint">*支持文本解析与图片直传（由 AI 多模态处理）。</div>
             </div>
 
             <div class="form-section">
@@ -1191,7 +1191,7 @@
                 <div id="devModeFields" style="display: none; flex-direction: column; gap: 10px;">
                     <input type="password" id="devApiKey" class="md-dialog-input" placeholder="API Key (X-Dev-Key)">
                     <input type="text" id="devBaseUrl" class="md-dialog-input" placeholder="Base URL (默认: https://api.openai.com/v1)">
-                    <input type="text" id="devModel" class="md-dialog-input" placeholder="Model Name (默认: glm-4.6v)">
+                    <input type="text" id="devModel" class="md-dialog-input" placeholder="Model Name（默认为系统模型）">
                     <textarea id="devCustomBody" class="md-dialog-textarea" style="min-height: 80px;" placeholder="Custom Body JSON (例如: {&quot;temperature&quot;: 0.7})"></textarea>
                     <div style="font-size: 11px; color: gray;">* 配置将保存在本地，请求时通过 Header 透传。</div>
                 </div>
