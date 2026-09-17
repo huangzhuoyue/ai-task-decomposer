@@ -1350,6 +1350,11 @@
             right: 24px;
             width: 350px;
             height: 450px;
+            min-width: min(300px, calc(100vw - 48px));
+            min-height: min(300px, calc(100vh - 48px));
+            max-width: calc(100vw - 48px);
+            max-height: calc(100vh - 48px);
+            box-sizing: border-box;
             background: var(--md-sys-color-surface);
             border-radius: 20px;
             box-shadow: var(--md-sys-elevation-3);
@@ -1360,7 +1365,7 @@
             transform: translateY(20px);
             opacity: 0;
             pointer-events: none;
-            transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .global-chat-panel.visible {
@@ -1382,7 +1387,10 @@
 
         .chat-messages {
             flex: 1;
+            min-width: 0;
+            min-height: 0;
             overflow-y: auto;
+            overflow-x: hidden;
             padding: 16px;
             display: flex;
             flex-direction: column;
@@ -1391,10 +1399,45 @@
 
         .chat-bubble {
             max-width: 85%;
+            box-sizing: border-box;
             padding: 10px 14px;
             border-radius: 16px;
             font-size: 13px;
             line-height: 1.5;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+        .chat-bubble > * { max-width: 100%; }
+        .chat-bubble pre { overflow-x: auto; white-space: pre-wrap; }
+        .chat-bubble img, .chat-bubble table { max-width: 100%; }
+
+        .chat-resize-handle { position: absolute; z-index: 5; }
+        .chat-resize-handle[data-resize="n"], .chat-resize-handle[data-resize="s"] { left: 12px; right: 12px; height: 8px; cursor: ns-resize; }
+        .chat-resize-handle[data-resize="n"] { top: -4px; }
+        .chat-resize-handle[data-resize="s"] { bottom: -4px; }
+        .chat-resize-handle[data-resize="e"], .chat-resize-handle[data-resize="w"] { top: 12px; bottom: 12px; width: 8px; cursor: ew-resize; }
+        .chat-resize-handle[data-resize="e"] { right: -4px; }
+        .chat-resize-handle[data-resize="w"] { left: -4px; }
+        .chat-resize-handle[data-resize="ne"], .chat-resize-handle[data-resize="nw"],
+        .chat-resize-handle[data-resize="se"], .chat-resize-handle[data-resize="sw"] { width: 14px; height: 14px; }
+        .chat-resize-handle[data-resize="ne"] { top: -5px; right: -5px; cursor: nesw-resize; }
+        .chat-resize-handle[data-resize="nw"] { top: -5px; left: -5px; cursor: nwse-resize; }
+        .chat-resize-handle[data-resize="se"] { right: -5px; bottom: -5px; cursor: nwse-resize; }
+        .chat-resize-handle[data-resize="sw"] { bottom: -5px; left: -5px; cursor: nesw-resize; }
+        body.resizing-chat { cursor: grabbing; user-select: none; }
+
+        @media (max-width: 760px) {
+            .global-chat-panel {
+                right: 10px;
+                bottom: 10px;
+                width: calc(100vw - 20px) !important;
+                height: min(560px, calc(100vh - 20px)) !important;
+                min-width: 0;
+                min-height: 280px;
+                max-width: none;
+                max-height: none;
+            }
+            .chat-resize-handle { display: none; }
         }
 
         .chat-bubble.user {
@@ -1968,6 +2011,14 @@
     </div>
 
     <div class="global-chat-panel" id="globalChatPanel">
+        <span class="chat-resize-handle" data-resize="n" aria-hidden="true"></span>
+        <span class="chat-resize-handle" data-resize="ne" aria-hidden="true"></span>
+        <span class="chat-resize-handle" data-resize="e" aria-hidden="true"></span>
+        <span class="chat-resize-handle" data-resize="se" aria-hidden="true"></span>
+        <span class="chat-resize-handle" data-resize="s" aria-hidden="true"></span>
+        <span class="chat-resize-handle" data-resize="sw" aria-hidden="true"></span>
+        <span class="chat-resize-handle" data-resize="w" aria-hidden="true"></span>
+        <span class="chat-resize-handle" data-resize="nw" aria-hidden="true"></span>
         <div class="chat-header">
             <span>项目全景助手</span>
             <button id="closeChatBtn" style="border:none; color:inherit; background:none; cursor:pointer; display:flex;">
@@ -2394,6 +2445,98 @@
         });
         elements.sendChatBtn.addEventListener('click', handleGlobalChat);
         elements.chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleGlobalChat(); });
+
+        const CHAT_PANEL_MARGIN = 12;
+        const CHAT_PANEL_MIN_WIDTH = 300;
+        const CHAT_PANEL_MIN_HEIGHT = 300;
+
+        function getStoredChatSize() {
+            try {
+                const value = JSON.parse(localStorage.getItem('global_chat_panel_size') || 'null');
+                return value && Number.isFinite(value.width) && Number.isFinite(value.height) ? value : null;
+            } catch {
+                return null;
+            }
+        }
+
+        function applyChatPanelSize() {
+            const panel = elements.globalChatPanel;
+            if (window.matchMedia('(max-width: 760px)').matches) {
+                ['left', 'top', 'right', 'bottom', 'width', 'height'].forEach(property => panel.style.removeProperty(property));
+                return;
+            }
+            const stored = getStoredChatSize();
+            const maxWidth = Math.max(120, window.innerWidth - 48);
+            const maxHeight = Math.max(120, window.innerHeight - 48);
+            const minWidth = Math.min(CHAT_PANEL_MIN_WIDTH, maxWidth);
+            const minHeight = Math.min(CHAT_PANEL_MIN_HEIGHT, maxHeight);
+            panel.style.width = `${Math.min(maxWidth, Math.max(minWidth, stored?.width || 350))}px`;
+            panel.style.height = `${Math.min(maxHeight, Math.max(minHeight, stored?.height || 450))}px`;
+            panel.style.left = 'auto';
+            panel.style.top = 'auto';
+            panel.style.right = '24px';
+            panel.style.bottom = '24px';
+        }
+
+        function startChatResize(event) {
+            if (window.matchMedia('(max-width: 760px)').matches) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const handle = event.currentTarget;
+            const direction = handle.dataset.resize;
+            const panel = elements.globalChatPanel;
+            const startRect = panel.getBoundingClientRect();
+            const startX = event.clientX;
+            const startY = event.clientY;
+            panel.style.left = `${startRect.left}px`;
+            panel.style.top = `${startRect.top}px`;
+            panel.style.right = 'auto';
+            panel.style.bottom = 'auto';
+            document.body.classList.add('resizing-chat');
+            handle.setPointerCapture(event.pointerId);
+
+            const move = moveEvent => {
+                const deltaX = moveEvent.clientX - startX;
+                const deltaY = moveEvent.clientY - startY;
+                let left = startRect.left;
+                let right = startRect.right;
+                let top = startRect.top;
+                let bottom = startRect.bottom;
+                const minWidth = Math.min(CHAT_PANEL_MIN_WIDTH, window.innerWidth - CHAT_PANEL_MARGIN * 2);
+                const minHeight = Math.min(CHAT_PANEL_MIN_HEIGHT, window.innerHeight - CHAT_PANEL_MARGIN * 2);
+
+                if (direction.includes('w')) left = Math.max(CHAT_PANEL_MARGIN, Math.min(startRect.left + deltaX, right - minWidth));
+                if (direction.includes('e')) right = Math.min(window.innerWidth - CHAT_PANEL_MARGIN, Math.max(startRect.right + deltaX, left + minWidth));
+                if (direction.includes('n')) top = Math.max(CHAT_PANEL_MARGIN, Math.min(startRect.top + deltaY, bottom - minHeight));
+                if (direction.includes('s')) bottom = Math.min(window.innerHeight - CHAT_PANEL_MARGIN, Math.max(startRect.bottom + deltaY, top + minHeight));
+
+                panel.style.left = `${left}px`;
+                panel.style.top = `${top}px`;
+                panel.style.width = `${right - left}px`;
+                panel.style.height = `${bottom - top}px`;
+            };
+
+            const finish = () => {
+                const rect = panel.getBoundingClientRect();
+                panel.style.left = 'auto';
+                panel.style.top = 'auto';
+                panel.style.right = `${Math.max(CHAT_PANEL_MARGIN, window.innerWidth - rect.right)}px`;
+                panel.style.bottom = `${Math.max(CHAT_PANEL_MARGIN, window.innerHeight - rect.bottom)}px`;
+                localStorage.setItem('global_chat_panel_size', JSON.stringify({ width: Math.round(rect.width), height: Math.round(rect.height) }));
+                document.body.classList.remove('resizing-chat');
+                handle.removeEventListener('pointermove', move);
+                handle.removeEventListener('pointerup', finish);
+                handle.removeEventListener('pointercancel', finish);
+            };
+
+            handle.addEventListener('pointermove', move);
+            handle.addEventListener('pointerup', finish);
+            handle.addEventListener('pointercancel', finish);
+        }
+
+        elements.globalChatPanel.querySelectorAll('.chat-resize-handle').forEach(handle => handle.addEventListener('pointerdown', startChatResize));
+        window.addEventListener('resize', Core.debounce(applyChatPanelSize, 120));
+        applyChatPanelSize();
 
         // 拖拽与缩放逻辑
         let isDown = false;
