@@ -168,8 +168,34 @@
             cursor: pointer;
         }
         .tree-layout-select:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
-        .save-indicator { font-size: 12px; color: var(--md-sys-color-outline); white-space: nowrap; }
+        .save-indicator { font-size: 12px; font-weight: 600; color: var(--md-sys-color-outline); white-space: nowrap; }
+        .save-indicator.pending, .save-indicator.saving { color: #9a6700; }
+        .save-indicator.saved { color: #2e7d32; }
         .save-indicator.error { color: #b3261e; }
+        .save-toast {
+            position: fixed;
+            top: 76px;
+            left: 50%;
+            z-index: 1600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            max-width: min(420px, calc(100vw - 32px));
+            padding: 10px 18px;
+            border-radius: 999px;
+            background: #1f1f1f;
+            color: #fff;
+            box-shadow: var(--md-sys-elevation-3);
+            font-size: 14px;
+            font-weight: 600;
+            opacity: 0;
+            pointer-events: none;
+            transform: translate(-50%, -12px);
+            transition: opacity .2s ease, transform .2s ease;
+        }
+        .save-toast.visible { opacity: 1; transform: translate(-50%, 0); }
+        .save-toast.success .material-icons-round { color: #81c784; }
+        .save-toast.error .material-icons-round { color: #ff8a80; }
         .audit-item { padding: 10px 12px; border-bottom: 1px solid var(--md-sys-color-outline-variant); }
         .audit-item:last-child { border-bottom: 0; }
         .audit-title { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 500; }
@@ -1737,6 +1763,11 @@
         </div>
     </header>
 
+    <div class="save-toast" id="saveToast" role="status" aria-live="polite" aria-atomic="true">
+        <span class="material-icons-round" id="saveToastIcon">cloud_done</span>
+        <span id="saveToastText">已保存更改</span>
+    </div>
+
     <div class="tree-tools" id="treeTools" aria-label="任务树工具">
         <span class="material-icons-round" style="font-size:20px;color:var(--md-sys-color-outline)">search</span>
         <input class="tree-search" id="treeSearch" type="search" placeholder="搜索节点标题或描述" aria-label="搜索任务节点">
@@ -2075,7 +2106,10 @@
             restoreFileInput: document.getElementById('restoreFileInput'),
             treeLayoutSelect: document.getElementById('treeLayoutSelect'),
             cancelRequestBtn: document.getElementById('cancelRequestBtn'),
-            saveIndicator: document.getElementById('saveIndicator')
+            saveIndicator: document.getElementById('saveIndicator'),
+            saveToast: document.getElementById('saveToast'),
+            saveToastIcon: document.getElementById('saveToastIcon'),
+            saveToastText: document.getElementById('saveToastText')
         });
         elements.treeLayoutSelect.value = state.treeLayout;
         elements.treeLayoutSelect.addEventListener('change', () => {
@@ -2110,11 +2144,23 @@
             if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || `保存失败 (${response.status})`);
             state.lastSavedAt = new Date();
         });
+        let saveToastTimer = null;
+        function showSaveToast(message, type = 'success') {
+            clearTimeout(saveToastTimer);
+            elements.saveToastText.textContent = message;
+            elements.saveToastIcon.textContent = type === 'error' ? 'cloud_off' : 'cloud_done';
+            elements.saveToast.classList.remove('success', 'error');
+            elements.saveToast.classList.add(type, 'visible');
+            saveToastTimer = setTimeout(() => elements.saveToast.classList.remove('visible'), type === 'error' ? 5000 : 2200);
+        }
+
         saveQueue.subscribe(status => {
             const labels = { idle: '本地状态', pending: '等待保存…', saving: '正在保存…', saved: '已保存' };
             elements.saveIndicator.textContent = status.state === 'error' ? '保存失败' : (labels[status.state] || '本地状态');
-            elements.saveIndicator.classList.toggle('error', status.state === 'error');
-            if (status.error) elements.saveIndicator.title = status.error.message;
+            elements.saveIndicator.className = `save-indicator ${status.state}`;
+            elements.saveIndicator.title = status.error?.message || '';
+            if (status.state === 'saved') showSaveToast('已保存更改');
+            if (status.state === 'error') showSaveToast(`保存失败：${status.error?.message || '请稍后重试'}`, 'error');
         });
 
         // --- 开发者模式逻辑 ---
