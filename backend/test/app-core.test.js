@@ -185,6 +185,51 @@ test('SSE parser emits raw malformed payload information', () => {
     assert.equal(messages[0].data, 'invalid-json');
 });
 
+test('developer settings migrate the legacy primary API shape', () => {
+    const settings = Core.normalizeDeveloperSettings({
+        enabled: true, apiKey: ' primary-key ', baseUrl: ' https://primary.example/v1 ', model: 'model-a'
+    });
+    assert.equal(settings.enabled, true);
+    assert.equal(settings.primary.apiKey, 'primary-key');
+    assert.equal(settings.primary.baseUrl, 'https://primary.example/v1');
+    assert.equal(settings.panorama.sameAsPrimary, true);
+});
+
+test('panorama assistant uses the primary profile by default', () => {
+    const settings = {
+        enabled: true,
+        primary: { apiKey: 'main-key', baseUrl: 'https://main.example/v1', model: 'main-model' },
+        panorama: { sameAsPrimary: true, apiKey: 'unused-key', model: 'unused-model' }
+    };
+    assert.deepEqual(Core.buildDeveloperHeaders(settings, 'panorama'), {
+        'X-Dev-Key': 'main-key', 'X-Dev-Base': 'https://main.example/v1', 'X-Dev-Model': 'main-model'
+    });
+});
+
+test('panorama assistant can use an independent API profile', () => {
+    const settings = {
+        enabled: true,
+        primary: { apiKey: 'main-key', model: 'main-model' },
+        panorama: {
+            sameAsPrimary: false,
+            apiKey: 'panorama-key', baseUrl: 'https://panorama.example/chat',
+            model: 'panorama-model', customBody: '{"temperature":0.2}'
+        }
+    };
+    assert.deepEqual(Core.buildDeveloperHeaders(settings, 'panorama'), {
+        'X-Dev-Key': 'panorama-key',
+        'X-Dev-Base': 'https://panorama.example/chat',
+        'X-Dev-Model': 'panorama-model',
+        'X-Dev-Body': '{"temperature":0.2}'
+    });
+    assert.equal(Core.buildDeveloperHeaders(settings, 'primary')['X-Dev-Key'], 'main-key');
+});
+
+test('developer API headers remain empty when disabled or missing a key', () => {
+    assert.deepEqual(Core.buildDeveloperHeaders({ enabled: false, primary: { apiKey: 'key' } }), {});
+    assert.deepEqual(Core.buildDeveloperHeaders({ enabled: true, primary: { apiKey: '' } }), {});
+});
+
 test('escapeHtml protects HTML interpolation points', () => {
     assert.equal(Core.escapeHtml('<img src="x">'), '&lt;img src=&quot;x&quot;&gt;');
     assert.equal(Core.escapeHtml("Tom & Jerry's"), 'Tom &amp; Jerry&#39;s');

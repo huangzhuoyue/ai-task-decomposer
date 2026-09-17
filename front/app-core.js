@@ -420,6 +420,44 @@
         };
     }
 
+    function normalizeApiProfile(profile = {}) {
+        return {
+            apiKey: typeof profile.apiKey === 'string' ? profile.apiKey.trim() : '',
+            baseUrl: typeof profile.baseUrl === 'string' ? profile.baseUrl.trim() : '',
+            model: typeof profile.model === 'string' ? profile.model.trim() : '',
+            customBody: typeof profile.customBody === 'string' ? profile.customBody.trim() : ''
+        };
+    }
+
+    function normalizeDeveloperSettings(raw = {}) {
+        const legacyPrimary = {
+            apiKey: raw.apiKey,
+            baseUrl: raw.baseUrl,
+            model: raw.model,
+            customBody: raw.customBody
+        };
+        return {
+            enabled: Boolean(raw.enabled),
+            primary: normalizeApiProfile(raw.primary || legacyPrimary),
+            panorama: {
+                sameAsPrimary: raw.panorama?.sameAsPrimary !== false,
+                ...normalizeApiProfile(raw.panorama || {})
+            }
+        };
+    }
+
+    function buildDeveloperHeaders(rawSettings, scope = 'primary') {
+        const settings = normalizeDeveloperSettings(rawSettings);
+        if (!settings.enabled) return {};
+        const profile = scope === 'panorama' && !settings.panorama.sameAsPrimary ? settings.panorama : settings.primary;
+        if (!profile.apiKey) return {};
+        const headers = { 'X-Dev-Key': profile.apiKey };
+        if (profile.baseUrl) headers['X-Dev-Base'] = profile.baseUrl;
+        if (profile.model) headers['X-Dev-Model'] = profile.model;
+        if (profile.customBody) headers['X-Dev-Body'] = profile.customBody;
+        return headers;
+    }
+
     function escapeHtml(value) {
         return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
     }
@@ -427,6 +465,7 @@
     global.TaskTreeCore = Object.freeze({
         SCHEMA_VERSION, clone, makeId, normalizeTree, analyzeTree, diagnoseTree, repairTree, buildIndex,
         descendantsOf, ancestorsOf, searchTree, exportTree, importTree,
-        toMarkdown, downloadText, debounce, createSaveQueue, createSSEParser, escapeHtml
+        toMarkdown, downloadText, debounce, createSaveQueue, createSSEParser,
+        normalizeApiProfile, normalizeDeveloperSettings, buildDeveloperHeaders, escapeHtml
     });
 })(typeof window !== 'undefined' ? window : globalThis);
