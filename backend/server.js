@@ -350,14 +350,16 @@ function inheritTreeState(currentTree, proposedTree, options) {
 }
 
 async function classifyRegenerationRequest(question, config) {
-    const candidate = /(重新|重做|重绘|重构|推倒重来|重新拆|重新生成|改成|调整.*结构|修改.*任务树)/u.test(question);
+    const candidate = /(重新|重做|重绘|重构|推倒重来|重新拆|重新生成|改成|调整.*结构|修改.*任务树|删除|删掉|去掉|移除|添加|增加|新增|移动|挪到|合并|拆分|改名|重命名|调整.*顺序)/u.test(question);
     if (!candidate) return { regenerate: false, instruction: '' };
     try {
         const content = await callLLMSummary([
             {
                 role: 'system',
-                content: `你是任务树操作意图分类器。只判断用户是否明确要求重新生成或整体重构当前任务树。
-仅咨询“是否合理、如何优化、有什么建议、能否换方案”不算授权重构。
+                content: `你是任务树操作意图分类器。判断用户是否明确要求改变当前任务树的数据或结构。
+以下均属于重构操作：整体重新生成；添加或删除节点；移动节点；修改父子关系；合并或拆分节点；修改节点标题、描述或顺序。
+例如“删除前2个节点”“把测试移到验收下面”“新增一个部署步骤”“合并这两步”都必须返回 regenerate=true。
+仅咨询“是否合理、如何优化、有什么建议、能否换方案”且没有要求实际修改时，才返回 regenerate=false。
 只输出 JSON：{"regenerate":true或false,"instruction":"明确且自包含的重构要求"}`
             },
             { role: 'user', content: question }
@@ -1183,8 +1185,8 @@ app.post('/api/chat-tree', optionalAuthMiddleware, aiRateLimiter, async (req, re
 2. 用户询问进度时，应依据 completed 和 progressNodes 区分已完成、进行中和未开始，不得把建议描述成已经完成的事实。
 3. 用户询问下一步时，应考虑父子关系、未完成节点和已有进度；用户询问风险或替代方案时，指出对应节点和判断依据。
 4. 信息不足但不影响主要结论时，可以作出明确标注的合理假设；信息不足且会显著改变答案时，只询问一个最关键的澄清问题。
-5. 只有当用户明确要求“重新生成、整体重构、推倒重来、按新结构重新拆分”时，才可识别为重构意图。仅询问“是否合理、能否优化、还有什么方案”不代表授权重构。
-6. 识别到明确重构意图时，只说明你理解到的重构目标和需要保留的约束，不要在聊天回答中伪造已完成的修改，也不要输出完整任务树；实际重构必须由受鉴权的 regenerate 接口生成提案并由用户确认。
+5. 当用户明确要求重新生成、整体重构，或者要求添加、删除、移动、合并、拆分、改名、调整顺序等实际节点修改时，应识别为重构意图。仅询问“是否合理、能否优化、还有什么方案”且没有要求落实修改时，不代表授权重构。
+6. 识别到明确修改意图时，不要在聊天回答中分析修改结果、声称无权修改或输出完整任务树；实际修改必须交给受鉴权的 regenerate 接口生成提案并由用户确认。
 
 <task_tree>
 主节点：${JSON.stringify(treeData.mainNodes)}
