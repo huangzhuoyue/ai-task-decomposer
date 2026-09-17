@@ -274,7 +274,7 @@ function getAIConfig(req) {
         const config = {
             apiKey: devKey,
             apiUrl: devBase || 'https://api.openai.com/v1/chat/completions',
-            model: devModel || 'glm-4.6v',
+            model: devModel || 'deepseek-flash',
             customBody: customBody,
             isDev: true
         };
@@ -285,7 +285,7 @@ function getAIConfig(req) {
     return {
         apiKey: API_KEY,
         apiUrl: API_URL,
-        model: 'deepseek-v4-flash',
+        model: 'deepseek-flash',
         customBody: {},
         isDev: false
     };
@@ -293,9 +293,9 @@ function getAIConfig(req) {
 
 // LLM 摘要调用函数 (支持自定义配置)
 async function callLLMSummary(messages, config = null) {
-    const cfg = config || { apiKey: API_KEY, apiUrl: API_URL, model: 'GLM-4.6V-FlashX', customBody: {} };
+    const cfg = config || { apiKey: API_KEY, apiUrl: API_URL, model: 'deepseek-flash', customBody: {} };
     const payload = {
-        model: cfg.model || 'GLM-4.6V-FlashX',
+        model: cfg.model || 'deepseek-flash',
         messages: messages,
         temperature: 0.5,
         ...cfg.customBody
@@ -347,6 +347,32 @@ function inheritTreeState(currentTree, proposedTree, options) {
         }
     });
     return { tree: proposedTree, inheritedCompleted, inheritedProgress };
+}
+
+async function classifyRegenerationRequest(question, config) {
+    const candidate = /(重新|重做|重绘|重构|推倒重来|重新拆|重新生成|改成|调整.*结构|修改.*任务树)/u.test(question);
+    if (!candidate) return { regenerate: false, instruction: '' };
+    try {
+        const content = await callLLMSummary([
+            {
+                role: 'system',
+                content: `你是任务树操作意图分类器。只判断用户是否明确要求重新生成或整体重构当前任务树。
+仅咨询“是否合理、如何优化、有什么建议、能否换方案”不算授权重构。
+只输出 JSON：{"regenerate":true或false,"instruction":"明确且自包含的重构要求"}`
+            },
+            { role: 'user', content: question }
+        ], config);
+        const match = String(content).match(/\{[\s\S]*\}/);
+        if (!match) return { regenerate: false, instruction: '' };
+        const result = JSON.parse(match[0]);
+        return {
+            regenerate: result.regenerate === true,
+            instruction: cleanText(result.instruction || question, { field: '重构要求', max: 4000, required: true })
+        };
+    } catch (error) {
+        console.warn('Regeneration intent classification failed:', error.message);
+        return { regenerate: false, instruction: '' };
+    }
 }
 
 // ================= API 路由 =================
@@ -1002,6 +1028,12 @@ app.post('/api/trees/:id/regenerate', strictAuthMiddleware, requireOwnedTree, ai
         if (!storedTree) return res.status(409).json({ error: '云端任务树数据损坏，无法重新生成' });
         const currentTree = normalizeTreeData(storedTree);
 
+        res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders?.();
+        res.write(`data: ${JSON.stringify({ type: 'status', message: '收到你的修改请求，正在重绘...' })}\n\n`);
+
         const systemPrompt = `你是“AI任务拆解系统”的任务树重构引擎。你的职责是根据现有任务树和用户的重构要求，生成一棵完整的新任务树。
 
 安全与执行边界：
@@ -1044,7 +1076,8 @@ app.post('/api/trees/:id/regenerate', strictAuthMiddleware, requireOwnedTree, ai
         const currentStats = analyzeTree(currentTree);
         const proposalStats = analyzeTree(inherited.tree);
         writeAuditLog(req.userId, 'tree.regenerate', 'tree', req.tree.id, `生成任务树重构提案：${instruction.slice(0, 200)}`);
-        res.json({
+        res.write(`data: ${JSON.stringify({
+            type: 'proposal',
             success: true,
             treeId: req.tree.id,
             basedOnUpdatedAt: req.tree.updated_at || req.tree.created_at,
@@ -1056,11 +1089,18 @@ app.post('/api/trees/:id/regenerate', strictAuthMiddleware, requireOwnedTree, ai
                 inheritedProgress: inherited.inheritedProgress
             },
             persisted: false
-        });
+        })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
     } catch (error) {
-        if (error instanceof ValidationError) return res.status(400).json({ error: error.message });
+        if (error instanceof ValidationError && !res.headersSent) return res.status(400).json({ error: error.message });
         const errorMsg = await getAxiosError(error);
         console.error('Regenerate tree failed:', errorMsg);
+        if (res.headersSent) {
+            res.write(`data: ${JSON.stringify({ type: 'error', error: `任务树重新生成失败：${errorMsg}` })}\n\n`);
+            res.write('data: [DONE]\n\n');
+            return res.end();
+        }
         res.status(502).json({ error: `任务树重新生成失败：${errorMsg}` });
     }
 });
@@ -1113,6 +1153,19 @@ app.post('/api/chat-tree', optionalAuthMiddleware, aiRateLimiter, async (req, re
     const { treeId, treeData, question, history = [] } = req.body;
 
     try {
+        const safeQuestion = cleanText(question, { field: '问题', max: 12000, required: true });
+        const ownedTree = treeId && req.userId ? getOwnedTree(treeId, req.userId) : null;
+        const intent = ownedTree ? await classifyRegenerationRequest(safeQuestion, config) : { regenerate: false };
+        if (intent.regenerate) {
+            res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            const notice = '收到你的修改请求，正在重绘...';
+            res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: notice } }] })}\n\n`);
+            res.write(`data: ${JSON.stringify({ type: 'tree_action', action: 'regenerate_tree', treeId: ownedTree.id, instruction: intent.instruction })}\n\n`);
+            res.write('data: [DONE]\n\n');
+            return res.end();
+        }
         const messages = [
             {
                 role: 'system',
