@@ -141,8 +141,9 @@
             font: inherit;
         }
         .tree-tool-btn {
+            width: 34px;
             height: 34px;
-            padding: 0 10px;
+            padding: 0;
             border: 1px solid var(--md-sys-color-outline-variant);
             border-radius: 18px;
             background: transparent;
@@ -152,9 +153,11 @@
             align-items: center;
             gap: 4px;
             white-space: nowrap;
+            justify-content: center;
         }
         .tree-tool-btn:hover { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-primary); }
         .tree-tool-btn .material-icons-round { font-size: 18px; }
+        .tree-tools .tool-label, .save-indicator { display: none; }
         .tree-layout-select {
             height: 34px;
             max-width: 112px;
@@ -225,7 +228,6 @@
 
         @media (max-width: 760px) {
             .tree-tools { overflow-x: auto; margin: 0 8px; }
-            .tree-tool-btn .tool-label, .save-indicator { display: none; }
         }
 
         /* Main Content */
@@ -1771,16 +1773,16 @@
     <div class="tree-tools" id="treeTools" aria-label="任务树工具">
         <span class="material-icons-round" style="font-size:20px;color:var(--md-sys-color-outline)">search</span>
         <input class="tree-search" id="treeSearch" type="search" placeholder="搜索节点标题或描述" aria-label="搜索任务节点">
-        <button class="tree-tool-btn" id="statsBtn" title="查看任务概览"><span class="material-icons-round">analytics</span><span class="tool-label">概览</span></button>
-        <button class="tree-tool-btn" id="diagnoseBtn" title="检查任务树完整性"><span class="material-icons-round">fact_check</span><span class="tool-label">诊断</span></button>
-        <button class="tree-tool-btn" id="backupBtn" title="导出 JSON 备份"><span class="material-icons-round">download</span><span class="tool-label">备份</span></button>
-        <button class="tree-tool-btn" id="restoreBtn" title="导入 JSON 备份"><span class="material-icons-round">upload</span><span class="tool-label">恢复</span></button>
+        <button class="tree-tool-btn" id="statsBtn" title="查看任务概览" aria-label="查看任务概览"><span class="material-icons-round">analytics</span><span class="tool-label">概览</span></button>
+        <button class="tree-tool-btn" id="diagnoseBtn" title="检查任务树完整性" aria-label="检查任务树完整性"><span class="material-icons-round">fact_check</span><span class="tool-label">诊断</span></button>
+        <button class="tree-tool-btn" id="backupBtn" title="导出 JSON 备份" aria-label="导出 JSON 备份"><span class="material-icons-round">download</span><span class="tool-label">备份</span></button>
+        <button class="tree-tool-btn" id="restoreBtn" title="导入 JSON 备份" aria-label="导入 JSON 备份"><span class="material-icons-round">upload</span><span class="tool-label">恢复</span></button>
         <label for="treeLayoutSelect" class="tool-label" style="font-size:12px;color:var(--md-sys-color-outline)">布局</label>
         <select class="tree-layout-select" id="treeLayoutSelect" title="选择任务树优先展开方向" aria-label="任务树渲染方向">
             <option value="vertical">纵向优先</option>
             <option value="horizontal">横向优先</option>
         </select>
-        <button class="tree-tool-btn" id="cancelRequestBtn" title="取消当前 AI 请求" style="display:none"><span class="material-icons-round">stop_circle</span><span class="tool-label">停止</span></button>
+        <button class="tree-tool-btn" id="cancelRequestBtn" title="取消当前 AI 请求" aria-label="取消当前 AI 请求" style="display:none"><span class="material-icons-round">stop_circle</span><span class="tool-label">停止</span></button>
         <span class="save-indicator" id="saveIndicator" role="status">本地状态</span>
         <input id="restoreFileInput" type="file" accept="application/json,.json" hidden>
     </div>
