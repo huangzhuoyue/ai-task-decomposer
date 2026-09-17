@@ -116,6 +116,69 @@
             border-color: var(--md-sys-color-primary);
         }
 
+        .tree-tools {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            margin: 0 16px;
+            border: 1px solid var(--md-sys-color-outline-variant);
+            border-radius: var(--md-sys-shape-corner-medium);
+            background: var(--md-sys-color-surface);
+            box-shadow: var(--md-sys-elevation-1);
+            z-index: 90;
+        }
+
+        .tree-tools.visible { display: flex; }
+        .tree-search {
+            flex: 1;
+            min-width: 120px;
+            height: 36px;
+            border: none;
+            outline: none;
+            background: transparent;
+            color: var(--md-sys-color-on-surface);
+            font: inherit;
+        }
+        .tree-tool-btn {
+            height: 34px;
+            padding: 0 10px;
+            border: 1px solid var(--md-sys-color-outline-variant);
+            border-radius: 18px;
+            background: transparent;
+            color: var(--md-sys-color-on-surface-variant);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+        }
+        .tree-tool-btn:hover { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-primary); }
+        .tree-tool-btn .material-icons-round { font-size: 18px; }
+        .save-indicator { font-size: 12px; color: var(--md-sys-color-outline); white-space: nowrap; }
+        .save-indicator.error { color: #b3261e; }
+        .audit-item { padding: 10px 12px; border-bottom: 1px solid var(--md-sys-color-outline-variant); }
+        .audit-item:last-child { border-bottom: 0; }
+        .audit-title { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 500; }
+        .audit-detail { margin-top: 3px; font-size: 12px; color: var(--md-sys-color-on-surface-variant); overflow-wrap: anywhere; }
+        .audit-pager { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 8px; font-size: 12px; }
+        .node-bubble.search-dimmed { opacity: .2; filter: grayscale(.7); }
+        .node-bubble.search-match { outline: 3px solid var(--md-sys-color-primary-container); }
+        .node-bubble.completed { opacity: .72; }
+        .node-bubble.completed .node-title { text-decoration: line-through; }
+        .node-complete-btn {
+            border: 0; background: transparent; color: var(--md-sys-color-outline);
+            cursor: pointer; display: inline-flex; padding: 2px;
+        }
+        .node-bubble.completed .node-complete-btn { color: #2e7d32; }
+        .priority-high { border-top: 4px solid #b3261e; }
+        .priority-low { border-top: 4px solid #2e7d32; }
+
+        @media (max-width: 760px) {
+            .tree-tools { overflow-x: auto; margin: 0 8px; }
+            .tree-tool-btn .tool-label, .save-indicator { display: none; }
+        }
+
         /* Main Content */
         .main-content {
             flex: 1;
@@ -1476,6 +1539,18 @@
         </div>
     </header>
 
+    <div class="tree-tools" id="treeTools" aria-label="任务树工具">
+        <span class="material-icons-round" style="font-size:20px;color:var(--md-sys-color-outline)">search</span>
+        <input class="tree-search" id="treeSearch" type="search" placeholder="搜索节点标题或描述" aria-label="搜索任务节点">
+        <button class="tree-tool-btn" id="statsBtn" title="查看任务概览"><span class="material-icons-round">analytics</span><span class="tool-label">概览</span></button>
+        <button class="tree-tool-btn" id="diagnoseBtn" title="检查任务树完整性"><span class="material-icons-round">fact_check</span><span class="tool-label">诊断</span></button>
+        <button class="tree-tool-btn" id="backupBtn" title="导出 JSON 备份"><span class="material-icons-round">download</span><span class="tool-label">备份</span></button>
+        <button class="tree-tool-btn" id="restoreBtn" title="导入 JSON 备份"><span class="material-icons-round">upload</span><span class="tool-label">恢复</span></button>
+        <button class="tree-tool-btn" id="cancelRequestBtn" title="取消当前 AI 请求" style="display:none"><span class="material-icons-round">stop_circle</span><span class="tool-label">停止</span></button>
+        <span class="save-indicator" id="saveIndicator" role="status">本地状态</span>
+        <input id="restoreFileInput" type="file" accept="application/json,.json" hidden>
+    </div>
+
     <div class="main-content">
         <div class="usage-guide-card" id="usageGuide">
             <div class="guide-header">
@@ -1608,6 +1683,21 @@
             <hr style="border: none; border-top: 1px solid var(--md-sys-color-outline-variant); margin: 24px 0;">
 
             <div class="form-section">
+                <div class="section-title"><span class="material-icons-round">history</span> 最近操作</div>
+                <div class="history-list" id="auditLogList" style="max-height:240px">
+                    <div style="padding:16px;text-align:center;color:gray;font-size:13px">打开个人中心后自动加载</div>
+                </div>
+                <div class="audit-pager" id="auditPager" style="display:none">
+                    <button class="guide-close" id="auditPrevBtn" title="上一页"><span class="material-icons-round">chevron_left</span></button>
+                    <span id="auditPageText">第 1 页</span>
+                    <button class="guide-close" id="auditNextBtn" title="下一页"><span class="material-icons-round">chevron_right</span></button>
+                    <button class="guide-close" id="clearAuditBtn" title="清空日志"><span class="material-icons-round">delete_sweep</span></button>
+                </div>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid var(--md-sys-color-outline-variant); margin: 24px 0;">
+
+            <div class="form-section">
                 <div class="section-title"><span class="material-icons-round">settings_applications</span> 开发者模式 (自定义 API)</div>
                 <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
                     <input type="checkbox" id="devModeToggle" style="width: 20px; height: 20px; cursor: pointer;">
@@ -1683,8 +1773,29 @@
         </button>
     </div>
 
+    <script src="app-core.js"></script>
     <script>
-        const API_BASE = 'https://api.hzyweb.xyz';
+        const API_BASE = window.location.protocol === 'file:' ? 'http://localhost:3000' : window.location.origin;
+        const Core = window.TaskTreeCore;
+        function renderMarkdown(source) {
+            const parsed = marked.parse(String(source || ''));
+            const documentNode = new DOMParser().parseFromString(parsed, 'text/html');
+            documentNode.querySelectorAll('script,style,iframe,object,embed,form,input,button,svg,math').forEach(node => node.remove());
+            documentNode.body.querySelectorAll('*').forEach(node => {
+                [...node.attributes].forEach(attribute => {
+                    const name = attribute.name.toLowerCase();
+                    const value = attribute.value.trim().toLowerCase();
+                    if (name.startsWith('on') || name === 'style' || ((name === 'href' || name === 'src') && /^(javascript|data):/.test(value))) {
+                        node.removeAttribute(attribute.name);
+                    }
+                });
+                if (node.tagName === 'A') {
+                    node.setAttribute('target', '_blank');
+                    node.setAttribute('rel', 'noopener noreferrer');
+                }
+            });
+            return documentNode.body.innerHTML;
+        }
         const state = { 
             mainNodes: [], 
             progressNodes: {}, 
@@ -1696,7 +1807,10 @@
             nodeAsking: null,  // 当前正在提问的节点 ID，防止并发串对话
             globalHistory: [],
             undoStack: [],
-            redoStack: []
+            redoStack: [],
+            searchQuery: '',
+            activeController: null,
+            lastSavedAt: null
         };
         const elements = {
             taskInput: document.getElementById('taskInput'), fileUpload: document.getElementById('fileUpload'),
@@ -1731,6 +1845,41 @@
             devCustomBody: document.getElementById('devCustomBody'),
             logoutBtn: document.getElementById('logoutBtn')
         };
+        Object.assign(elements, {
+            treeTools: document.getElementById('treeTools'),
+            treeSearch: document.getElementById('treeSearch'),
+            statsBtn: document.getElementById('statsBtn'),
+            diagnoseBtn: document.getElementById('diagnoseBtn'),
+            backupBtn: document.getElementById('backupBtn'),
+            restoreBtn: document.getElementById('restoreBtn'),
+            restoreFileInput: document.getElementById('restoreFileInput'),
+            cancelRequestBtn: document.getElementById('cancelRequestBtn'),
+            saveIndicator: document.getElementById('saveIndicator')
+        });
+        Object.assign(elements, {
+            auditLogList: document.getElementById('auditLogList'), auditPager: document.getElementById('auditPager'),
+            auditPageText: document.getElementById('auditPageText'), auditPrevBtn: document.getElementById('auditPrevBtn'),
+            auditNextBtn: document.getElementById('auditNextBtn'), clearAuditBtn: document.getElementById('clearAuditBtn')
+        });
+
+        const saveQueue = Core.createSaveQueue(async snapshot => {
+            if (!state.currentTreeId) return;
+            const token = localStorage.getItem('jwt_token');
+            if (!token) return;
+            const response = await fetch(`${API_BASE}/api/trees/${state.currentTreeId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ tree_data: snapshot })
+            });
+            if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || `保存失败 (${response.status})`);
+            state.lastSavedAt = new Date();
+        });
+        saveQueue.subscribe(status => {
+            const labels = { idle: '本地状态', pending: '等待保存…', saving: '正在保存…', saved: '已保存' };
+            elements.saveIndicator.textContent = status.state === 'error' ? '保存失败' : (labels[status.state] || '本地状态');
+            elements.saveIndicator.classList.toggle('error', status.state === 'error');
+            if (status.error) elements.saveIndicator.title = status.error.message;
+        });
 
         // --- 开发者模式逻辑 ---
         function loadDevSettings() {
@@ -1922,6 +2071,16 @@
         elements.detailPanelClose.addEventListener('click', () => elements.detailPanel.classList.remove('visible'));
         elements.exportBtn.addEventListener('click', exportAsImage);
         elements.clearAllBtn.addEventListener('click', clearAll);
+        elements.treeSearch.addEventListener('input', Core.debounce(() => {
+            state.searchQuery = elements.treeSearch.value;
+            applyTreeSearch();
+        }, 150));
+        elements.statsBtn.addEventListener('click', showTreeStats);
+        elements.diagnoseBtn.addEventListener('click', showTreeDiagnosis);
+        elements.backupBtn.addEventListener('click', exportTreeBackup);
+        elements.restoreBtn.addEventListener('click', () => elements.restoreFileInput.click());
+        elements.restoreFileInput.addEventListener('change', importTreeBackup);
+        elements.cancelRequestBtn.addEventListener('click', () => state.activeController?.abort());
         elements.treeContainer.addEventListener('click', (e) => { const descEl = e.target.closest('.node-desc'); if (descEl && !isDown) { descEl.classList.toggle('expanded'); } });
 
         // 模式切换
@@ -2052,7 +2211,7 @@
         }
 
         // 改造后的流式请求函数，自动携带 JWT Token
-        async function fetchSSE(url, bodyData, onUpdate) {
+        async function fetchSSE(url, bodyData, onUpdate, options = {}) {
             const token = localStorage.getItem('jwt_token');
             const headers = { 
                 'Content-Type': 'application/json',
@@ -2060,41 +2219,55 @@
             };
             if (token) headers['Authorization'] = `Bearer ${token}`;
 
-            const response = await fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(bodyData) });
+            const controller = new AbortController();
+            const timeoutMs = options.timeoutMs || 120000;
+            const timeout = setTimeout(() => controller.abort(new Error('请求超时')), timeoutMs);
+            state.activeController = controller;
+            elements.cancelRequestBtn.style.display = 'inline-flex';
+            let response;
+            try {
+                response = await fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(bodyData), signal: controller.signal });
+            } catch (error) {
+                clearTimeout(timeout);
+                if (state.activeController === controller) state.activeController = null;
+                elements.cancelRequestBtn.style.display = 'none';
+                if (error.name === 'AbortError') throw new Error('请求已取消');
+                throw error;
+            }
 
             if (!response.ok) {
                 if (response.status === 401 || response.status === 403) {
                     localStorage.removeItem('jwt_token');
                     throw new Error(`认证失效，请重新登录 (${response.status})`);
                 }
+                clearTimeout(timeout);
+                if (state.activeController === controller) state.activeController = null;
+                elements.cancelRequestBtn.style.display = 'none';
                 throw new Error(`请求后端失败: ${response.status}`);
             }
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            let fullText = '', buffer = '';
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                buffer += decoder.decode(value, { stream: true });
-                let lines = buffer.split('\n');
-                buffer = lines.pop();
-                for (let line of lines) {
-                    line = line.trim();
-                    if (line.startsWith('data: ') && line !== 'data: [DONE]') {
-                        try {
-                            const content = JSON.parse(line.slice(6)).choices?.[0]?.delta?.content || "";
-                            if (content) {
-                                fullText += content;
-                                if (onUpdate) onUpdate(fullText, false);
-                            }
-                        } catch (e) { }
-                    }
+            let fullText = '';
+            const parser = Core.createSSEParser(payload => {
+                const content = payload.choices?.[0]?.delta?.content || '';
+                if (content) { fullText += content; if (onUpdate) onUpdate(fullText, false); }
+            });
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    parser.push(decoder.decode(value, { stream: true }));
                 }
+                parser.push(decoder.decode());
+                parser.finish();
+                if (onUpdate) onUpdate(fullText, true);
+                return fullText;
+            } finally {
+                clearTimeout(timeout);
+                if (state.activeController === controller) state.activeController = null;
+                elements.cancelRequestBtn.style.display = 'none';
             }
-            if (onUpdate) onUpdate(fullText, true);
-            return fullText;
         }
 
         async function extractFilesContent() {
@@ -2187,6 +2360,100 @@
             } finally { elements.decomposeBtn.disabled = false; state.isProcessing = false; }
         }
 
+        function getTreeSnapshot() {
+            return { mainNodes: state.mainNodes, progressNodes: state.progressNodes };
+        }
+
+        function applyTreeSearch() {
+            const result = Core.searchTree(getTreeSnapshot(), state.searchQuery);
+            document.querySelectorAll('.node-bubble').forEach(element => {
+                const id = element.dataset.id;
+                element.classList.toggle('search-dimmed', Boolean(state.searchQuery) && !result.visible.has(id));
+                element.classList.toggle('search-match', Boolean(state.searchQuery) && result.matches.has(id));
+            });
+        }
+
+        async function showTreeStats() {
+            const stats = Core.analyzeTree(getTreeSnapshot());
+            await showMdDialog({
+                title: '任务进度概览',
+                content: `共 ${stats.nodes} 个节点，其中 ${stats.completed} 个已完成（${stats.completionRate}%）。<br>
+                    根任务 ${stats.roots} 个，叶子任务 ${stats.leaves} 个，最大层级 ${stats.maxDepth} 层。<br>
+                    已生成 ${stats.progressCount} 条执行进度；高优先级任务 ${stats.priorities.high} 个。`,
+                confirmText: '知道了', cancelText: '关闭'
+            });
+        }
+
+        async function showTreeDiagnosis() {
+            const diagnosis = Core.diagnoseTree(getTreeSnapshot());
+            if (diagnosis.valid) {
+                await showMdDialog({ title: '完整性诊断', content: `任务树结构正常，共检查 ${diagnosis.summary.nodes} 个节点，未发现异常。`, confirmText: '完成', cancelText: '关闭' });
+                return;
+            }
+            const preview = diagnosis.issues.slice(0, 8).map(issue => `• ${Core.escapeHtml(issue.message)}`).join('<br>');
+            const remaining = diagnosis.issues.length > 8 ? `<br>另有 ${diagnosis.issues.length - 8} 项未展开。` : '';
+            const confirmed = await showMdDialog({
+                title: '发现任务树结构问题',
+                content: `检测到 ${diagnosis.summary.errors} 个错误、${diagnosis.summary.warnings} 个警告。<br><br>${preview}${remaining}<br><br>一键修复会保留可恢复的节点和进度，并支持撤销。`,
+                confirmText: '一键修复', cancelText: '暂不处理'
+            });
+            if (!confirmed) return;
+            const repaired = Core.repairTree(getTreeSnapshot());
+            pushState();
+            state.mainNodes = repaired.tree.mainNodes;
+            state.progressNodes = repaired.tree.progressNodes;
+            renderTree();
+            saveCurrentTree();
+            postAuditLog('tree.repair', 'tree', state.currentTreeId || '', `修复 ${repaired.repairs.length} 项结构问题`);
+            await showMdDialog({
+                title: '修复完成',
+                content: `已完成 ${repaired.repairs.length} 项修复。当前剩余错误 ${repaired.diagnosis.summary.errors} 个、警告 ${repaired.diagnosis.summary.warnings} 个。`,
+                confirmText: '完成', cancelText: '关闭'
+            });
+        }
+
+        function exportTreeBackup() {
+            if (!state.mainNodes.length) return alert('暂无任务树可备份');
+            const json = Core.exportTree(getTreeSnapshot(), { title: elements.taskInput.value.trim() || 'AI 任务树' });
+            Core.downloadText(`AI_Task_Tree_${new Date().toISOString().slice(0, 10)}.json`, json);
+            postAuditLog('tree.backup', 'tree', state.currentTreeId || '', `导出 ${state.mainNodes.length} 个节点的 JSON 备份`);
+        }
+
+        async function importTreeBackup(event) {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (!file) return;
+            try {
+                const imported = Core.importTree(await file.text());
+                const confirmed = await showMdDialog({
+                    title: '恢复任务树备份',
+                    content: `将载入 ${imported.tree.mainNodes.length} 个节点。当前未保存的内容会被替换。${imported.warnings.length ? `<br>检测到并修复 ${imported.warnings.length} 个结构问题。` : ''}`,
+                    confirmText: '确认恢复', cancelText: '取消'
+                });
+                if (!confirmed) return;
+                pushState();
+                state.mainNodes = imported.tree.mainNodes;
+                state.progressNodes = imported.tree.progressNodes;
+                state.currentTreeId = null;
+                renderTree();
+                elements.taskInput.value = imported.metadata.title || elements.taskInput.value;
+                postAuditLog('tree.restore', 'tree', '', `从备份恢复 ${state.mainNodes.length} 个节点`);
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        window.toggleNodeCompleted = function (nodeId, event) {
+            event?.stopPropagation();
+            const node = state.mainNodes.find(item => String(item.id) === String(nodeId));
+            if (!node) return;
+            pushState();
+            node.completed = !node.completed;
+            renderTree();
+            saveCurrentTree();
+            postAuditLog('node.complete', 'node', node.id, `${node.title}：${node.completed ? '已完成' : '未完成'}`);
+        };
+
         function renderTree() {
             elements.treeRoot.innerHTML = '';
             
@@ -2195,11 +2462,13 @@
                 elements.treeRoot.innerHTML = `<div class="empty-state"><span class="material-icons-round">account_tree</span><p>暂无数据</p></div>`; 
                 elements.modeSwitcher.style.display = 'none'; 
                 elements.chatToggleFab.style.display = 'none';
+                elements.treeTools.classList.remove('visible');
                 elements.globalChatPanel.classList.remove('visible'); // 隐藏已打开的面板
                 return; 
             }
             elements.modeSwitcher.style.display = 'flex'; 
             elements.chatToggleFab.style.display = 'flex';
+            elements.treeTools.classList.add('visible');
 
             const nodeMap = {}, roots = [];
             state.mainNodes.forEach(n => { n.children = []; nodeMap[n.id] = n; });
@@ -2212,22 +2481,25 @@
                     <div class="progress-node" onclick="showDetail('${node.id}', ${i})">
                         <div class="progress-header">进度 #${i + 1}</div>
                         <div class="progress-preview-container">
-                            <div class="progress-preview" id="prev-${node.id}-${i}">${marked.parse(p.content.substring(0, 50)).replace(/<[^>]*>/g, '')}...</div>
+                            <div class="progress-preview" id="prev-${node.id}-${i}">${renderMarkdown(p.content.substring(0, 50)).replace(/<[^>]*>/g, '')}...</div>
                             <span class="material-icons-round progress-preview-icon">arrow_drop_down</span>
                         </div>
                     </div>`).join('')}</div>` : '';
                 
                 const dragAttr = state.editMode ? 'draggable="true" ondragstart="handleDragStart(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)"' : '';
                 
-                let html = `<li><div class="node-container"><div class="node-bubble" id="node-${node.id}" ${dragAttr} data-id="${node.id}">
+                const safeId = Core.escapeHtml(node.id);
+                const priorityClass = node.priority === 'high' ? 'priority-high' : node.priority === 'low' ? 'priority-low' : '';
+                let html = `<li><div class="node-container"><div class="node-bubble ${node.completed ? 'completed' : ''} ${priorityClass}" id="node-${safeId}" ${dragAttr} data-id="${safeId}">
                     <div class="node-delete-btn" onclick="confirmDelete('${node.id}')" title="删除节点及后代">
                         <span class="material-icons-round">cancel</span>
                     </div>
                     <div class="node-header">
+                        <button class="node-complete-btn" onclick="toggleNodeCompleted('${safeId}', event)" title="标记完成状态" aria-label="标记完成状态"><span class="material-icons-round">${node.completed ? 'check_circle' : 'radio_button_unchecked'}</span></button>
                         <div class="node-number">${state.mainNodes.indexOf(node) + 1}</div>
-                        <div class="node-title">${node.title}</div>
+                        <div class="node-title">${Core.escapeHtml(node.title)}</div>
                     </div>
-                    <div class="node-desc">${node.desc}</div>
+                    <div class="node-desc">${Core.escapeHtml(node.desc)}</div>
                     <div class="node-action">
                         <button class="md-button md-button-primary" onclick="askNode('${node.id}')" ${state.editMode ? 'disabled' : ''}>提问</button>
                     </div>
@@ -2241,6 +2513,7 @@
             }
             elements.treeRoot.innerHTML = `<ul>${roots.map(buildHtml).join('')}</ul>`;
             elements.treeRoot.style.transform = `scale(${state.scale})`;
+            applyTreeSearch();
         }
 
         // --- 节点管理逻辑 ---
@@ -2264,6 +2537,7 @@
                 state.mainNodes.push(newNode);
                 renderTree();
                 saveCurrentTree();
+                postAuditLog('node.create', 'node', newNode.id, `添加节点：${newNode.title}`);
             }
         };
 
@@ -2278,9 +2552,11 @@
             
             if (confirmed) {
                 pushState();
+                const deletedCount = Core.descendantsOf(nodeId, Core.buildIndex(state.mainNodes).children).size + 1;
                 deleteNodeRecursive(nodeId);
                 renderTree();
                 saveCurrentTree();
+                postAuditLog('node.delete', 'node', nodeId, `删除节点“${node.title}”及 ${deletedCount - 1} 个后代节点`);
             }
         };
 
@@ -2351,16 +2627,7 @@
         }
 
         async function saveCurrentTree() {
-            if (state.currentTreeId) {
-                const token = localStorage.getItem('jwt_token');
-                if (token) {
-                    await fetch(`${API_BASE}/api/trees/${state.currentTreeId}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                        body: JSON.stringify({ tree_data: { mainNodes: state.mainNodes, progressNodes: state.progressNodes } })
-                    });
-                }
-            }
+            if (state.currentTreeId) saveQueue.enqueue(getTreeSnapshot());
         }
 
         // --- 全局问答逻辑 ---
@@ -2384,7 +2651,7 @@
                 }, (streamText, isComplete) => {
                     fullText = streamText;
                     // 使用 marked.parse 渲染 Markdown
-                    aiBubble.innerHTML = marked.parse(streamText);
+                    aiBubble.innerHTML = renderMarkdown(streamText);
                     if (isComplete) {
                         state.globalHistory.push({ role: 'user', content: question });
                         state.globalHistory.push({ role: 'assistant', content: fullText });
@@ -2401,7 +2668,7 @@
             const div = document.createElement('div');
             div.className = `chat-bubble ${role}`;
             if (role === 'assistant') {
-                div.innerHTML = marked.parse(content);
+                div.innerHTML = renderMarkdown(content);
             } else {
                 div.innerText = content;
             }
@@ -2413,7 +2680,9 @@
         async function syncGlobalHistory() {
             if (!state.currentTreeId) return;
             try {
-                const res = await fetch(`${API_BASE}/api/chat-tree/history/${state.currentTreeId}`);
+                const token = localStorage.getItem('jwt_token');
+                if (!token) return;
+                const res = await fetch(`${API_BASE}/api/chat-tree/history/${state.currentTreeId}`, { headers: { 'Authorization': `Bearer ${token}` } });
                 if (res.ok) {
                     const history = await res.json();
                     state.globalHistory = history;
@@ -2457,7 +2726,7 @@
                     state.progressNodes[nodeId][pIdx].content = streamText;
                     if (prevEl) prevEl.innerText = streamText.substring(0, 50) + '...';
                     if (elements.detailPanel.classList.contains('visible') && elements.detailPanelTitle.innerText.includes(`#${pIdx + 1}`)) {
-                        elements.detailPanelContent.innerHTML = marked.parse(streamText);
+                        elements.detailPanelContent.innerHTML = renderMarkdown(streamText);
                     }
                 });
 
@@ -2475,7 +2744,7 @@
         }
         function showDetail(nid, idx) {
             elements.detailPanelTitle.innerText = `${state.mainNodes.find(n => n.id == nid).title} - 进度 #${idx + 1}`;
-            elements.detailPanelContent.innerHTML = marked.parse(state.progressNodes[nid][idx].content);
+            elements.detailPanelContent.innerHTML = renderMarkdown(state.progressNodes[nid][idx].content);
             elements.detailPanel.classList.add('visible');
         }
 
@@ -2554,8 +2823,12 @@
 
                 historyList.innerHTML = data.map(item => `
                     <div class="history-item" onclick="restoreTree(${item.id})">
-                        <span class="history-title">${item.title}</span>
-                        <span class="history-date">${item.created_at.replace('T', ' ').substring(0, 19)}</span>
+                        <span class="history-title">${Core.escapeHtml(item.title)}</span>
+                        <span class="history-date">${Core.escapeHtml((item.updated_at || item.created_at).replace('T', ' ').substring(0, 19))}</span>
+                        <span style="display:flex;gap:2px;margin-left:auto">
+                            <button class="guide-close" onclick="renameHistory(event, ${item.id}, '${encodeURIComponent(item.title)}')" title="重命名"><span class="material-icons-round" style="font-size:17px">edit</span></button>
+                            <button class="guide-close" onclick="deleteHistory(event, ${item.id}, '${encodeURIComponent(item.title)}')" title="删除"><span class="material-icons-round" style="font-size:17px">delete</span></button>
+                        </span>
                     </div>
                 `).join('');
             } catch (err) {
@@ -2585,6 +2858,33 @@
             }
         }
 
+        window.renameHistory = async function (event, treeId, currentTitle) {
+            event.stopPropagation();
+            currentTitle = decodeURIComponent(currentTitle);
+            const result = await showMdDialog({ title: '重命名任务树', fields: [{ key: 'title', label: '名称', value: currentTitle }] });
+            if (!result?.title.trim()) return;
+            const token = localStorage.getItem('jwt_token');
+            const response = await fetch(`${API_BASE}/api/trees/${treeId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ title: result.title.trim() })
+            });
+            if (!response.ok) return alert((await response.json().catch(() => ({}))).error || '重命名失败');
+            loadHistoryList();
+        };
+
+        window.deleteHistory = async function (event, treeId, title) {
+            event.stopPropagation();
+            title = decodeURIComponent(title);
+            const confirmed = await showMdDialog({ title: '删除历史记录', content: `确认删除“${Core.escapeHtml(title)}”及其全局对话记录？`, confirmText: '确认删除', cancelText: '取消' });
+            if (!confirmed) return;
+            const token = localStorage.getItem('jwt_token');
+            const response = await fetch(`${API_BASE}/api/trees/${treeId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+            if (!response.ok) return alert((await response.json().catch(() => ({}))).error || '删除失败');
+            if (String(state.currentTreeId) === String(treeId)) state.currentTreeId = null;
+            loadHistoryList();
+        };
+
         // ================= 身份认证与 UI 联动 =================
         const authBtn = document.getElementById('authBtn');
         const accountPanel = document.getElementById('accountPanel');
@@ -2611,6 +2911,50 @@
             document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax${domainClause}${window.location.protocol === 'https:' ? '; Secure' : ''}`;
         }
 
+        const auditState = { page: 1, totalPages: 1, loading: false };
+        const auditLabels = {
+            'tree.create': '创建任务树', 'tree.rename': '重命名任务树', 'tree.delete': '删除任务树',
+            'tree.restore': '恢复任务树', 'tree.repair': '修复任务树', 'tree.backup': '备份任务树',
+            'node.complete': '更新完成状态', 'node.create': '添加节点', 'node.delete': '删除节点'
+        };
+
+        function postAuditLog(action, targetType, targetId, detail) {
+            const token = localStorage.getItem('jwt_token');
+            if (!token) return Promise.resolve(false);
+            return fetch(`${API_BASE}/api/audit-logs`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ action, targetType, targetId, detail })
+            }).then(response => response.ok).catch(() => false);
+        }
+
+        async function loadAuditLogs(page = auditState.page) {
+            const token = localStorage.getItem('jwt_token');
+            if (!token || auditState.loading) return;
+            auditState.loading = true;
+            elements.auditLogList.innerHTML = '<div style="padding:16px;text-align:center;color:gray;font-size:13px">加载中…</div>';
+            try {
+                const response = await fetch(`${API_BASE}/api/audit-logs?page=${page}&pageSize=10`, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (!response.ok) throw new Error('日志加载失败');
+                const data = await response.json();
+                auditState.page = data.page;
+                auditState.totalPages = data.totalPages;
+                elements.auditPager.style.display = 'flex';
+                elements.auditPageText.textContent = `第 ${data.page} / ${data.totalPages} 页`;
+                elements.auditPrevBtn.disabled = data.page <= 1;
+                elements.auditNextBtn.disabled = data.page >= data.totalPages;
+                elements.auditLogList.innerHTML = data.items.length ? data.items.map(item => `
+                    <div class="audit-item">
+                        <div class="audit-title"><span>${Core.escapeHtml(auditLabels[item.action] || item.action)}</span><span class="history-date">${Core.escapeHtml(item.created_at)}</span></div>
+                        <div class="audit-detail">${Core.escapeHtml(item.detail || '无补充说明')}</div>
+                    </div>`).join('') : '<div style="padding:16px;text-align:center;color:gray;font-size:13px">暂无操作记录</div>';
+            } catch (error) {
+                elements.auditLogList.innerHTML = `<div style="padding:16px;text-align:center;color:#b3261e;font-size:13px">${Core.escapeHtml(error.message)}</div>`;
+            } finally {
+                auditState.loading = false;
+            }
+        }
+
         function updateAuthState() {
             let token = localStorage.getItem('jwt_token');
             if (!token) {
@@ -2627,6 +2971,7 @@
                     accountPanel.classList.add('visible'); // 弹出个人面板
                     loadPasskeys(); // 加载通行证列表
                     loadBindEmail(); // 加载已绑定邮箱
+                    loadAuditLogs(1);
                 };
                 loadHistoryList();
             } else {
@@ -2658,6 +3003,16 @@
         // 关闭面板
         document.getElementById('accountPanelClose').addEventListener('click', () => {
             accountPanel.classList.remove('visible');
+        });
+        elements.auditPrevBtn.addEventListener('click', () => loadAuditLogs(Math.max(1, auditState.page - 1)));
+        elements.auditNextBtn.addEventListener('click', () => loadAuditLogs(Math.min(auditState.totalPages, auditState.page + 1)));
+        elements.clearAuditBtn.addEventListener('click', async () => {
+            const confirmed = await showMdDialog({ title: '清空操作日志', content: '确定清空当前账号的全部操作日志吗？该操作不会删除任务树。', confirmText: '清空日志', cancelText: '取消' });
+            if (!confirmed) return;
+            const token = localStorage.getItem('jwt_token');
+            const response = await fetch(`${API_BASE}/api/audit-logs`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+            if (!response.ok) return alert('清空日志失败');
+            loadAuditLogs(1);
         });
 
         // 退出登录

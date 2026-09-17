@@ -7,10 +7,27 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const util = require('util');
 const nodemailer = require('nodemailer');
+const crypto = require('crypto');
+const path = require('path');
+const { createRateLimiter } = require('./lib/rate-limit');
+const { analyzeTree } = require('./lib/tree-analytics');
+const {
+    ValidationError, cleanText, validateEmail, validateCredentials,
+    normalizeTreeData, validateDecomposeBody, validateAskBody, safeJsonParse
+} = require('./lib/validation');
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=()');
+    res.setHeader('X-Request-Id', req.headers['x-request-id'] || crypto.randomUUID());
+    next();
+});
 
 const {
     generateRegistrationOptions,
@@ -20,14 +37,15 @@ const {
 } = require('@simplewebauthn/server');
 
 // 环境变量配置
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET || 'b7a25a598a34b518e69dbcbb49db64c';
 const SALT_ROUNDS = 10;
-const API_KEY = process.env.ZHIPU_API_KEY;
-const API_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
+const API_KEY = process.env.DEEPSEEK_API_KEY || process.env.ZHIPU_API_KEY;
+const API_URL = process.env.AI_API_URL || 'https://api.deepseek.com/chat/completions';
 const RP_ID = process.env.RP_ID || 'hzyweb.xyz';
 const EXPECTED_ORIGIN = process.env.EXPECTED_ORIGIN
     ? process.env.EXPECTED_ORIGIN.split(',').map(s => s.trim())
-    : ['https://hzyweb.xyz', 'https://m.hzyweb.xyz'];
+    : ['http://localhost:3000', 'http://127.0.0.1:3000', 'https://hzyweb.xyz', 'https://m.hzyweb.xyz'];
+if (!process.env.JWT_SECRET) console.warn('[Security] 生产环境必须配置独立的 JWT_SECRET。');
 
 // 腾讯邮箱 SMTP 配置
 const MAIL_USER = process.env.MAIL_USER || '';      // 你的 QQ/腾讯企业邮箱
@@ -64,7 +82,9 @@ const challengeStore = new Map();
 const resetCodeStore = new Map();
 
 // 数据库初始化与建表
-const db = new Database('ai_tasks.db');
+const DB_PATH = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : path.join(__dirname, 'ai_tasks.db');
+const FRONT_DIR = path.resolve(__dirname, '../front');
+const db = new Database(DB_PATH);
 db.exec(`
   -- 节点记忆状态表 (用于上下文压缩)
   CREATE TABLE IF NOT EXISTS node_states (
@@ -99,7 +119,8 @@ db.exec(`
     user_id INTEGER,
     title TEXT,
     tree_data TEXT,
-    created_at DATETIME DEFAULT (datetime('now', '+8 hours'))
+    created_at DATETIME DEFAULT (datetime('now', '+8 hours')),
+    updated_at DATETIME DEFAULT (datetime('now', '+8 hours'))
   );
   
   -- WebAuthn 凭证表
@@ -121,6 +142,18 @@ db.exec(`
     content TEXT,
     created_at DATETIME DEFAULT (datetime('now', '+8 hours'))
   );
+
+  -- 用户操作日志（用于任务变更追溯）
+  CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    target_type TEXT DEFAULT '',
+    target_id TEXT DEFAULT '',
+    detail TEXT DEFAULT '',
+    created_at DATETIME DEFAULT (datetime('now', '+8 hours'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_audit_logs_user_time ON audit_logs(user_id, created_at DESC);
 `);
 // 数据库迁移：确保 webauthn_credentials 表中有 device_name 列
 try {
@@ -132,6 +165,12 @@ try {
 // 数据库迁移：确保 users 表中有 email 列
 try {
     db.prepare("ALTER TABLE users ADD COLUMN email TEXT").run();
+} catch (e) {
+    // 列可能已经存在，忽略错误
+}
+try {
+    db.prepare("ALTER TABLE user_trees ADD COLUMN updated_at DATETIME DEFAULT NULL").run();
+    db.prepare("UPDATE user_trees SET updated_at = created_at WHERE updated_at IS NULL").run();
 } catch (e) {
     // 列可能已经存在，忽略错误
 }
@@ -164,6 +203,33 @@ const strictAuthMiddleware = (req, res, next) => {
         next();
     });
 };
+
+const authRateLimiter = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 30, message: '认证请求过于频繁，请稍后再试' });
+const aiRateLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 20, message: 'AI 请求过于频繁，请稍后再试' });
+
+function getOwnedTree(treeId, userId) {
+    return db.prepare('SELECT id, user_id, title, tree_data, created_at, updated_at FROM user_trees WHERE id = ? AND user_id = ?').get(treeId, userId);
+}
+
+function requireOwnedTree(req, res, next) {
+    const tree = getOwnedTree(req.params.id || req.params.treeId, req.userId);
+    if (!tree) return res.status(404).json({ error: '记录不存在或无权访问' });
+    req.tree = tree;
+    next();
+}
+
+const AUDIT_ACTIONS = new Set([
+    'tree.create', 'tree.rename', 'tree.delete', 'tree.restore',
+    'tree.repair', 'tree.backup', 'node.complete', 'node.create', 'node.delete'
+]);
+
+function writeAuditLog(userId, action, targetType = '', targetId = '', detail = '') {
+    if (!userId || !AUDIT_ACTIONS.has(action)) return false;
+    const safeDetail = cleanText(String(detail || ''), { field: '日志详情', max: 500 });
+    db.prepare('INSERT INTO audit_logs (user_id, action, target_type, target_id, detail) VALUES (?, ?, ?, ?, ?)')
+        .run(userId, action, String(targetType || '').slice(0, 40), String(targetId || '').slice(0, 128), safeDetail);
+    return true;
+}
 
 // 帮助提取 Axios 错误信息 (特别是支持 stream 模式下的错误)
 async function getAxiosError(error) {
@@ -219,7 +285,7 @@ function getAIConfig(req) {
     return {
         apiKey: API_KEY,
         apiUrl: API_URL,
-        model: 'glm-4.6v',
+        model: 'deepseek-v4-flash',
         customBody: {},
         isDev: false
     };
@@ -244,9 +310,9 @@ async function callLLMSummary(messages, config = null) {
 // ================= API 路由 =================
 
 // 1. 登录与自动注册接口 (Bcrypt 加密)
-app.post('/api/login', async (req, res) => {
-    const { username, password } = req.body;
+app.post('/api/login', authRateLimiter, async (req, res) => {
     try {
+        const { username, password } = validateCredentials(req.body);
         let user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
 
         if (!user) {
@@ -264,6 +330,7 @@ app.post('/api/login', async (req, res) => {
         res.json({ token, message: '认证成功' });
     } catch (error) {
         console.error('Login Error:', error);
+        if (error instanceof ValidationError) return res.status(400).json({ error: error.message });
         res.status(500).json({ error: '服务器内部错误' });
     }
 });
@@ -274,11 +341,8 @@ app.post('/api/login', async (req, res) => {
 
 // 2. 绑定/更新邮箱（需要已登录）
 app.post('/api/user/email', strictAuthMiddleware, async (req, res) => {
-    const { email } = req.body;
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        return res.status(400).json({ error: '邮箱格式不正确' });
-    }
     try {
+        const email = validateEmail(req.body.email);
         // 检查邮箱是否已被其他账户绑定
         const existing = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email, req.userId);
         if (existing) return res.status(409).json({ error: '该邮箱已被其他账户绑定' });
@@ -286,12 +350,13 @@ app.post('/api/user/email', strictAuthMiddleware, async (req, res) => {
         res.json({ success: true, message: '邮箱已更新' });
     } catch (err) {
         console.error('Update email error:', err);
+        if (err instanceof ValidationError) return res.status(400).json({ error: err.message });
         res.status(500).json({ error: '更新邮箱失败' });
     }
 });
 
 // 3. 发送重置码（不需要登录，需提供用户名）
-app.post('/api/password/send-reset-code', async (req, res) => {
+app.post('/api/password/send-reset-code', authRateLimiter, async (req, res) => {
     const { username } = req.body;
     if (!username) return res.status(400).json({ error: '请提供用户名' });
 
@@ -356,7 +421,7 @@ app.post('/api/password/send-reset-code', async (req, res) => {
 });
 
 // 4. 验证重置码并修改密码
-app.post('/api/password/reset', async (req, res) => {
+app.post('/api/password/reset', authRateLimiter, async (req, res) => {
     const { username, code, newPassword } = req.body;
     if (!username || !code || !newPassword) {
         return res.status(400).json({ error: '参数不完整' });
@@ -605,10 +670,10 @@ app.get('/api/history', strictAuthMiddleware, (req, res) => {
 });
 
 //  任务拆解接口 (无状态)
-app.post('/api/decompose', async (req, res) => {
+app.post('/api/decompose', aiRateLimiter, async (req, res) => {
     const config = getAIConfig(req);
     try {
-        const { taskText, images } = req.body;
+        const { taskText, images } = validateDecomposeBody(req.body);
         let userContent;
         if (images && images.length > 0) {
             userContent = [{ type: "text", text: taskText }];
@@ -649,14 +714,15 @@ app.post('/api/decompose', async (req, res) => {
     } catch (error) {
         const errorMsg = await getAxiosError(error);
         console.error('Decompose request failed:', errorMsg);
+        if (error instanceof ValidationError) return res.status(400).json({ error: error.message });
         res.status(500).json({ error: `Backend processing failed: ${errorMsg}` });
     }
 });
 
 //  节点对话接口 (宽松鉴权 + 数据双写)
-app.post('/api/ask', optionalAuthMiddleware, async (req, res) => {
+app.post('/api/ask', optionalAuthMiddleware, aiRateLimiter, async (req, res) => {
     const config = getAIConfig(req);
-    const { nodeId, title, desc, userQuestion } = req.body;
+    const { nodeId, title, desc, userQuestion } = validateAskBody(req.body);
     const userId = req.userId; // 可能是 null(访客) 或 具体ID(已登录)
 
     try {
@@ -747,13 +813,19 @@ app.post('/api/ask', optionalAuthMiddleware, async (req, res) => {
     } catch (error) {
         const errorMsg = await getAxiosError(error);
         console.error('Ask request failed:', errorMsg);
+        if (error instanceof ValidationError && !res.headersSent) return res.status(400).json({ error: error.message });
         if (!res.headersSent) res.status(500).json({ error: `Backend processing failed: ${errorMsg}` });
     }
 });
 
 //  导入解析接口 (无状态)
-app.post('/api/import', async (req, res) => {
-    const { taskText, images = [] } = req.body;
+app.post('/api/import', aiRateLimiter, async (req, res) => {
+    let taskText, images;
+    try {
+        ({ taskText, images } = validateDecomposeBody(req.body));
+    } catch (error) {
+        return res.status(400).json({ error: error.message });
+    }
 
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
@@ -807,7 +879,7 @@ app.post('/api/import', async (req, res) => {
 // 获取当前用户的历史树列表
 app.get('/api/trees', strictAuthMiddleware, (req, res) => {
     try {
-        const trees = db.prepare('SELECT id, title, created_at FROM user_trees WHERE user_id = ? ORDER BY created_at DESC').all(req.userId);
+        const trees = db.prepare('SELECT id, title, created_at, COALESCE(updated_at, created_at) AS updated_at FROM user_trees WHERE user_id = ? ORDER BY COALESCE(updated_at, created_at) DESC').all(req.userId);
         res.json(trees);
     } catch (err) {
         res.status(500).json({ error: '获取历史列表失败' });
@@ -829,7 +901,10 @@ app.get('/api/trees/:id', strictAuthMiddleware, (req, res) => {
 app.post('/api/trees', strictAuthMiddleware, (req, res) => {
     const { title, tree_data } = req.body;
     try {
-        const info = db.prepare('INSERT INTO user_trees (user_id, title, tree_data) VALUES (?, ?, ?)').run(req.userId, title, JSON.stringify(tree_data));
+        const safeTitle = cleanText(title, { field: '任务树标题', max: 160, required: true });
+        const safeTree = normalizeTreeData(tree_data);
+        const info = db.prepare('INSERT INTO user_trees (user_id, title, tree_data) VALUES (?, ?, ?)').run(req.userId, safeTitle, JSON.stringify(safeTree));
+        writeAuditLog(req.userId, 'tree.create', 'tree', info.lastInsertRowid, `创建任务树：${safeTitle}`);
         res.json({ success: true, id: info.lastInsertRowid }); // 返回生成的 id
     } catch (err) {
         console.error('保存树失败:', err);
@@ -841,21 +916,80 @@ app.post('/api/trees', strictAuthMiddleware, (req, res) => {
 app.put('/api/trees/:id', strictAuthMiddleware, (req, res) => {
     const { tree_data } = req.body;
     try {
-        db.prepare('UPDATE user_trees SET tree_data = ? WHERE id = ? AND user_id = ?').run(JSON.stringify(tree_data), req.params.id, req.userId);
-        res.json({ success: true });
+        const safeTree = normalizeTreeData(tree_data);
+        const info = db.prepare("UPDATE user_trees SET tree_data = ?, updated_at = datetime('now', '+8 hours') WHERE id = ? AND user_id = ?").run(JSON.stringify(safeTree), req.params.id, req.userId);
+        if (!info.changes) return res.status(404).json({ error: '记录不存在或无权修改' });
+        res.json({ success: true, updatedAt: new Date().toISOString() });
     } catch (err) {
         console.error('更新树失败:', err);
         res.status(500).json({ error: '更新历史记录失败' });
     }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Backend proxy and compression engine started, listening on port: ${PORT}`));
+app.patch('/api/trees/:id', strictAuthMiddleware, requireOwnedTree, (req, res) => {
+    const title = cleanText(req.body.title, { field: '任务树标题', max: 160, required: true });
+    db.prepare("UPDATE user_trees SET title = ?, updated_at = datetime('now', '+8 hours') WHERE id = ? AND user_id = ?").run(title, req.params.id, req.userId);
+    writeAuditLog(req.userId, 'tree.rename', 'tree', req.params.id, `“${req.tree.title}”重命名为“${title}”`);
+    res.json({ success: true, title });
+});
+
+app.delete('/api/trees/:id', strictAuthMiddleware, requireOwnedTree, (req, res) => {
+    db.transaction(() => {
+        db.prepare('DELETE FROM global_chat_history WHERE tree_id = ?').run(req.params.id);
+        db.prepare('DELETE FROM user_trees WHERE id = ? AND user_id = ?').run(req.params.id, req.userId);
+    })();
+    writeAuditLog(req.userId, 'tree.delete', 'tree', req.params.id, `删除任务树：${req.tree.title}`);
+    res.json({ success: true });
+});
+
+app.get('/api/trees/:id/stats', strictAuthMiddleware, requireOwnedTree, (req, res) => {
+    res.json(analyzeTree(safeJsonParse(req.tree.tree_data, { mainNodes: [], progressNodes: {} })));
+});
+
+app.post('/api/audit-logs', strictAuthMiddleware, (req, res) => {
+    try {
+        const action = cleanText(req.body.action, { field: '操作类型', max: 40, required: true });
+        if (!AUDIT_ACTIONS.has(action)) return res.status(400).json({ error: '不支持的操作类型' });
+        const targetType = cleanText(req.body.targetType, { field: '目标类型', max: 40 });
+        const targetId = cleanText(String(req.body.targetId || ''), { field: '目标 ID', max: 128 });
+        const detail = cleanText(req.body.detail, { field: '日志详情', max: 500 });
+        writeAuditLog(req.userId, action, targetType, targetId, detail);
+        res.status(201).json({ success: true });
+    } catch (error) {
+        if (error instanceof ValidationError) return res.status(400).json({ error: error.message });
+        throw error;
+    }
+});
+
+app.get('/api/audit-logs', strictAuthMiddleware, (req, res) => {
+    const page = Math.max(1, Math.min(100000, Number.parseInt(req.query.page, 10) || 1));
+    const pageSize = Math.max(5, Math.min(50, Number.parseInt(req.query.pageSize, 10) || 20));
+    const offset = (page - 1) * pageSize;
+    const total = db.prepare('SELECT COUNT(*) AS count FROM audit_logs WHERE user_id = ?').get(req.userId).count;
+    const items = db.prepare(`
+        SELECT id, action, target_type, target_id, detail, created_at
+        FROM audit_logs WHERE user_id = ?
+        ORDER BY id DESC LIMIT ? OFFSET ?
+    `).all(req.userId, pageSize, offset);
+    res.json({ items, page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) });
+});
+
+app.delete('/api/audit-logs', strictAuthMiddleware, (req, res) => {
+    const info = db.prepare('DELETE FROM audit_logs WHERE user_id = ?').run(req.userId);
+    res.json({ success: true, deleted: info.changes });
+});
+
+app.get('/api/health', (req, res) => {
+    let database = 'ok';
+    try { db.prepare('SELECT 1').get(); } catch { database = 'error'; }
+    const ok = database === 'ok';
+    res.status(ok ? 200 : 503).json({ status: ok ? 'ok' : 'degraded', database, uptimeSeconds: Math.round(process.uptime()), timestamp: new Date().toISOString() });
+});
 
 // ================= 全局树 Q&A 接口 (无鉴权) =================
 
 // 1. 全局问答对话接口
-app.post('/api/chat-tree', async (req, res) => {
+app.post('/api/chat-tree', optionalAuthMiddleware, aiRateLimiter, async (req, res) => {
     const config = getAIConfig(req);
     const { treeId, treeData, question, history = [] } = req.body;
 
@@ -913,7 +1047,7 @@ ${JSON.stringify(treeData.progressNodes)}
         response.data.on('end', () => {
             res.end();
             // 如果提供了 treeId，保存到数据库
-            if (treeId && aiAnswer) {
+            if (treeId && req.userId && getOwnedTree(treeId, req.userId) && aiAnswer) {
                 db.prepare('INSERT INTO global_chat_history (tree_id, role, content) VALUES (?, ?, ?)').run(treeId, 'user', question);
                 db.prepare('INSERT INTO global_chat_history (tree_id, role, content) VALUES (?, ?, ?)').run(treeId, 'assistant', aiAnswer);
             }
@@ -927,7 +1061,7 @@ ${JSON.stringify(treeData.progressNodes)}
 });
 
 // 2. 获取全局对话历史 (无鉴权)
-app.get('/api/chat-tree/history/:treeId', (req, res) => {
+app.get('/api/chat-tree/history/:treeId', strictAuthMiddleware, requireOwnedTree, (req, res) => {
     try {
         const history = db.prepare('SELECT role, content, created_at FROM global_chat_history WHERE tree_id = ? ORDER BY created_at ASC').all(req.params.treeId);
         res.json(history);
@@ -935,3 +1069,47 @@ app.get('/api/chat-tree/history/:treeId', (req, res) => {
         res.status(500).json({ error: '获取历史记录失败' });
     }
 });
+
+app.get('/api/user/profile', strictAuthMiddleware, (req, res) => {
+    const user = db.prepare('SELECT username, email FROM users WHERE id = ?').get(req.userId);
+    if (!user) return res.status(404).json({ error: '用户不存在' });
+    res.json({ username: user.username, email: user.email || '' });
+});
+
+// 本地与单机部署：由同一服务托管前端，避免 file:// 和跨域差异。
+app.use(express.static(FRONT_DIR, {
+    extensions: ['html'],
+    etag: true,
+    maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0,
+    setHeaders(res, filePath) {
+        if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+    }
+}));
+
+app.get('/', (req, res) => res.sendFile(path.join(FRONT_DIR, 'index.html')));
+
+app.use((error, req, res, next) => {
+    if (res.headersSent) return next(error);
+    if (error instanceof ValidationError) return res.status(error.statusCode).json({ error: error.message, details: error.details });
+    if (error?.type === 'entity.too.large') return res.status(413).json({ error: '请求内容超过大小限制' });
+    console.error(`[${res.getHeader('X-Request-Id')}] Unhandled error:`, error);
+    res.status(500).json({ error: '服务器内部错误' });
+});
+
+const PORT = Number.parseInt(process.env.PORT, 10) || 3000;
+const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`AI Task Decomposer is available at http://localhost:${PORT}`);
+    console.log(`Database: ${DB_PATH}`);
+});
+
+function shutdown(signal) {
+    console.log(`Received ${signal}, shutting down...`);
+    server.close(() => {
+        db.close();
+        process.exit(0);
+    });
+    setTimeout(() => process.exit(1), 5000).unref();
+}
+
+process.once('SIGINT', () => shutdown('SIGINT'));
+process.once('SIGTERM', () => shutdown('SIGTERM'));

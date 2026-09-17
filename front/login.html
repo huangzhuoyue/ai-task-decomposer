@@ -442,7 +442,7 @@
 
 	<script>
 		const { startRegistration, startAuthentication } = SimpleWebAuthnBrowser;
-		const API_BASE = 'https://api.hzyweb.xyz/api';
+		const API_BASE = `${window.location.protocol === 'file:' ? 'http://localhost:3000' : window.location.origin}/api`;
 
 		const errorMsg = document.getElementById('errorMsg');
 		const submitBtn = document.getElementById('submitBtn');
