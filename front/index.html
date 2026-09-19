@@ -158,7 +158,7 @@
         .save-toast {
             position: fixed;
             left: 50%;
-            bottom: 88px;
+            top: 118px;
             z-index: 3200;
             min-width: 150px;
             max-width: min(90vw, 360px);
@@ -173,12 +173,13 @@
             gap: 9px;
             opacity: 0;
             pointer-events: none;
-            transform: translate(-50%, 18px) scale(.96);
+            transform: translate(-50%, 0);
             transition: opacity 180ms ease, transform 220ms cubic-bezier(.2, 0, 0, 1);
             font-size: 14px;
             font-weight: 500;
         }
-        .save-toast.visible { opacity: 1; pointer-events: auto; transform: translate(-50%, 0) scale(1); }
+        .save-toast.entering { transform: translate(-50%, -16px); }
+        .save-toast.visible { opacity: 1; pointer-events: auto; transform: translate(-50%, 0); }
         .save-toast.error { background: #8C1D18; cursor: pointer; }
         .save-toast .material-icons-round { font-size: 19px; }
         .audit-item { padding: 10px 12px; border-bottom: 1px solid var(--md-sys-color-outline-variant); }
@@ -201,7 +202,6 @@
         @media (max-width: 760px) {
             .tree-tools { overflow-x: auto; margin: 0 8px; }
             .tree-tool-btn .tool-label { display: none; }
-            .save-toast { bottom: 82px; }
         }
 
         /* Main Content */
@@ -1941,25 +1941,42 @@
             state.lastSavedAt = new Date();
         });
         let saveToastTimer = null;
+        function positionSaveToast() {
+            const toolsRect = elements.treeTools.getBoundingClientRect();
+            if (toolsRect.width > 0 && toolsRect.height > 0) {
+                elements.saveToast.style.left = `${toolsRect.left + toolsRect.width / 2}px`;
+                elements.saveToast.style.top = `${toolsRect.bottom + 10}px`;
+            }
+        }
         function hideSaveToast() {
             clearTimeout(saveToastTimer);
+            elements.saveToast.classList.remove('entering');
             elements.saveToast.classList.remove('visible');
             elements.saveToast.setAttribute('aria-hidden', 'true');
         }
         function showSaveToast(message, icon, options = {}) {
             clearTimeout(saveToastTimer);
+            const alreadyVisible = elements.saveToast.classList.contains('visible');
             elements.saveToastText.textContent = message;
             elements.saveToastIcon.textContent = icon;
             elements.saveToastIcon.classList.toggle('spin-ccw', Boolean(options.spinning));
             elements.saveToast.classList.toggle('error', Boolean(options.error));
             elements.saveToast.title = options.error && options.detail ? options.detail : '';
-            elements.saveToast.classList.add('visible');
+            positionSaveToast();
+            if (!alreadyVisible) {
+                elements.saveToast.classList.add('entering');
+                void elements.saveToast.offsetWidth;
+                elements.saveToast.classList.remove('entering');
+                elements.saveToast.classList.add('visible');
+            }
             elements.saveToast.setAttribute('aria-hidden', 'false');
             if (options.duration) saveToastTimer = setTimeout(hideSaveToast, options.duration);
         }
         elements.saveToast.addEventListener('click', () => {
             if (elements.saveToast.classList.contains('error')) hideSaveToast();
         });
+        window.addEventListener('resize', positionSaveToast);
+        window.addEventListener('scroll', positionSaveToast, { passive: true });
         saveQueue.subscribe(status => {
             if (status.state === 'idle') return hideSaveToast();
             if (status.state === 'pending') return showSaveToast('等待保存…', 'schedule');
@@ -2475,7 +2492,7 @@
             const result = Core.searchTree(getTreeSnapshot(), state.searchQuery);
             document.querySelectorAll('.node-bubble').forEach(element => {
                 const id = element.dataset.id;
-                element.classList.toggle('search-dimmed', Boolean(state.searchQuery) && !result.visible.has(id));
+                element.classList.toggle('search-dimmed', Boolean(state.searchQuery) && !result.matches.has(id));
                 element.classList.toggle('search-match', Boolean(state.searchQuery) && result.matches.has(id));
             });
         }
