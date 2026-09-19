@@ -155,8 +155,32 @@
         }
         .tree-tool-btn:hover { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-primary); }
         .tree-tool-btn .material-icons-round { font-size: 18px; }
-        .save-indicator { font-size: 12px; color: var(--md-sys-color-outline); white-space: nowrap; }
-        .save-indicator.error { color: #b3261e; }
+        .save-toast {
+            position: fixed;
+            left: 50%;
+            bottom: 88px;
+            z-index: 3200;
+            min-width: 150px;
+            max-width: min(90vw, 360px);
+            padding: 11px 18px;
+            border-radius: var(--md-sys-shape-corner-full);
+            background: #322F35;
+            color: #F5EFF7;
+            box-shadow: var(--md-sys-elevation-3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 9px;
+            opacity: 0;
+            pointer-events: none;
+            transform: translate(-50%, 18px) scale(.96);
+            transition: opacity 180ms ease, transform 220ms cubic-bezier(.2, 0, 0, 1);
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .save-toast.visible { opacity: 1; pointer-events: auto; transform: translate(-50%, 0) scale(1); }
+        .save-toast.error { background: #8C1D18; cursor: pointer; }
+        .save-toast .material-icons-round { font-size: 19px; }
         .audit-item { padding: 10px 12px; border-bottom: 1px solid var(--md-sys-color-outline-variant); }
         .audit-item:last-child { border-bottom: 0; }
         .audit-title { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 500; }
@@ -176,7 +200,8 @@
 
         @media (max-width: 760px) {
             .tree-tools { overflow-x: auto; margin: 0 8px; }
-            .tree-tool-btn .tool-label, .save-indicator { display: none; }
+            .tree-tool-btn .tool-label { display: none; }
+            .save-toast { bottom: 82px; }
         }
 
         /* Main Content */
@@ -1547,8 +1572,12 @@
         <button class="tree-tool-btn" id="backupBtn" title="导出 JSON 备份"><span class="material-icons-round">download</span><span class="tool-label">备份</span></button>
         <button class="tree-tool-btn" id="restoreBtn" title="导入 JSON 备份"><span class="material-icons-round">upload</span><span class="tool-label">恢复</span></button>
         <button class="tree-tool-btn" id="cancelRequestBtn" title="取消当前 AI 请求" style="display:none"><span class="material-icons-round">stop_circle</span><span class="tool-label">停止</span></button>
-        <span class="save-indicator" id="saveIndicator" role="status">本地状态</span>
         <input id="restoreFileInput" type="file" accept="application/json,.json" hidden>
+    </div>
+
+    <div class="save-toast" id="saveToast" role="status" aria-live="polite" aria-hidden="true">
+        <span class="material-icons-round" id="saveToastIcon">cloud_done</span>
+        <span id="saveToastText">已保存</span>
     </div>
 
     <div class="main-content">
@@ -1889,7 +1918,9 @@
             restoreBtn: document.getElementById('restoreBtn'),
             restoreFileInput: document.getElementById('restoreFileInput'),
             cancelRequestBtn: document.getElementById('cancelRequestBtn'),
-            saveIndicator: document.getElementById('saveIndicator')
+            saveToast: document.getElementById('saveToast'),
+            saveToastIcon: document.getElementById('saveToastIcon'),
+            saveToastText: document.getElementById('saveToastText')
         });
         Object.assign(elements, {
             auditLogList: document.getElementById('auditLogList'), auditPager: document.getElementById('auditPager'),
@@ -1909,11 +1940,32 @@
             if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || `保存失败 (${response.status})`);
             state.lastSavedAt = new Date();
         });
+        let saveToastTimer = null;
+        function hideSaveToast() {
+            clearTimeout(saveToastTimer);
+            elements.saveToast.classList.remove('visible');
+            elements.saveToast.setAttribute('aria-hidden', 'true');
+        }
+        function showSaveToast(message, icon, options = {}) {
+            clearTimeout(saveToastTimer);
+            elements.saveToastText.textContent = message;
+            elements.saveToastIcon.textContent = icon;
+            elements.saveToastIcon.classList.toggle('spin-ccw', Boolean(options.spinning));
+            elements.saveToast.classList.toggle('error', Boolean(options.error));
+            elements.saveToast.title = options.error && options.detail ? options.detail : '';
+            elements.saveToast.classList.add('visible');
+            elements.saveToast.setAttribute('aria-hidden', 'false');
+            if (options.duration) saveToastTimer = setTimeout(hideSaveToast, options.duration);
+        }
+        elements.saveToast.addEventListener('click', () => {
+            if (elements.saveToast.classList.contains('error')) hideSaveToast();
+        });
         saveQueue.subscribe(status => {
-            const labels = { idle: '本地状态', pending: '等待保存…', saving: '正在保存…', saved: '已保存' };
-            elements.saveIndicator.textContent = status.state === 'error' ? '保存失败' : (labels[status.state] || '本地状态');
-            elements.saveIndicator.classList.toggle('error', status.state === 'error');
-            if (status.error) elements.saveIndicator.title = status.error.message;
+            if (status.state === 'idle') return hideSaveToast();
+            if (status.state === 'pending') return showSaveToast('等待保存…', 'schedule');
+            if (status.state === 'saving') return showSaveToast('正在保存…', 'sync', { spinning: true });
+            if (status.state === 'saved') return showSaveToast('已保存', 'cloud_done', { duration: 1800 });
+            if (status.state === 'error') showSaveToast('保存失败 · 点击关闭', 'error', { error: true, detail: status.error?.message });
         });
 
         // --- 开发者模式逻辑 ---
