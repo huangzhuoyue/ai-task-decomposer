@@ -296,12 +296,16 @@ function getAIConfig(req) {
 }
 
 // LLM 摘要调用函数 (支持自定义配置)
-async function callLLMSummary(messages, config = null) {
+async function callLLMSummary(messages, config = null, options = {}) {
     const cfg = config || { apiKey: API_KEY, apiUrl: API_URL, model: 'GLM-4.6V-FlashX', customBody: {} };
     const payload = {
         model: cfg.model || 'GLM-4.6V-FlashX',
         messages: messages,
         temperature: 0.5,
+        ...(options.jsonOutput ? {
+            response_format: { type: 'json_object' },
+            max_tokens: 4096
+        } : {}),
         ...cfg.customBody
     };
 
@@ -689,7 +693,7 @@ app.post('/api/decompose', aiRateLimiter, async (req, res) => {
         }
 
         const messages = [
-            { role: 'system', content: `用中文回复。你是一名专业的任务拆解专家，请按照逻辑链将任务拆分为细小步骤。每个小步骤的 parentId 应为上一步骤的 id（若为根节点则为 null）。请为每个节点判断 priority：阻塞后续、位于关键路径或高风险的步骤为 high；可延后且不阻塞主流程的步骤为 low；其余为 normal。priority 只能取 high、normal、low 之一。【隐私与安全强制策略】：如果用户的请求涉及非法操作、欺骗行为（如伪造证件、作弊代写）、色情、暴力、仇恨或任何违反公共内容安全政策的活动，请直接且仅返回：[{"id": "error", "parentId": null, "title": "安全审查受限", "desc": "此请求涵盖违反安全守则的敏感或受限内容，终止拆解计划。", "priority": "normal"}]。通过基础检查后，你必须且只能严格按照 JSON 数组格式输出，不包含任何 Markdown 标签。格式要求：[{"id": "编号", "parentId": "父节点 id", "title": "步骤名词", "desc": "具体操作内容", "priority": "normal"}]` },
+            { role: 'system', content: `用中文回复。你是一名专业的任务拆解专家，请按照逻辑链将任务拆分为细小步骤。每个小步骤的 parentId 应为上一步骤的 id（若为根节点则为 null）。请为每个节点判断 priority：阻塞后续、位于关键路径或高风险的步骤为 high；可延后且不阻塞主流程的步骤为 low；其余为 normal。priority 只能取 high、normal、low 之一。【隐私与安全强制策略】：如果用户请求涉及非法操作、欺骗行为（如伪造证件、作弊代写）、色情、暴力、仇恨或其他受限活动，只返回含一个安全审查节点的结果。必须返回非空、合法的 JSON 对象，不要输出 Markdown、代码围栏或解释文字。JSON 示例：{"mainNodes":[{"id":"1","parentId":null,"title":"步骤名称","desc":"具体操作内容","priority":"normal"}]}。安全审查节点也必须放入 mainNodes 数组。` },
             { role: 'user', content: userContent }
         ];
 
@@ -699,6 +703,8 @@ app.post('/api/decompose', aiRateLimiter, async (req, res) => {
             messages: messages,
             stream: true,
             "thinking": { "type": "disabled" },
+            response_format: { type: 'json_object' },
+            max_tokens: 4096,
             ...config.customBody
         };
 
@@ -836,19 +842,19 @@ app.post('/api/import', aiRateLimiter, async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
 
     const IMPORT_PROMPT = `你是一个专业的数据结构转换引擎。用户将提供一张思维导图的图片，或者一份包含层级关系（如 Markdown 列表）的文档。
-你的唯一任务是：提取其中的节点和层级，将其转换为扁平化的 JSON 数组格式。
+你的唯一任务是：提取其中的节点和层级，将其转换为包含 mainNodes 数组的非空 JSON 对象。
 规则：
-1. 必须且只能输出一个 JSON 数组。不要有任何 Markdown 代码块或解释性文字。
+1. 必须且只能输出一个合法、非空的 JSON 对象。不要有任何 Markdown 代码块或解释性文字。
 2. 数组中的每个对象必须严格包含五个字段："id", "title", "desc", "parentId", "priority"（根节点 parentId 为 null）。
 3. priority 仅可为 high、normal、low。原文明确标注时按原文转换；未标注时，关键路径、阻塞后续或高风险节点为 high，可延后且不阻塞主流程的节点为 low，其余为 normal。
-4. 严禁改变原图或原文档中的逻辑层级和从属关系。格式要求如下：
-[{
+4. 严禁改变原图或原文档中的逻辑层级和从属关系。JSON 格式示例如下：
+{"mainNodes":[{
   "id": "唯一编号或字符串",
   "parentId": "父节点的ID",
   "title": "步骤名称",
   "desc": "具体操作内容",
   "priority": "normal"
-}]`;
+}]}`;
     const contentList = [{ type: 'text', text: taskText }];
     if (images && images.length > 0) {
         images.forEach(imgBase64 => {
@@ -864,7 +870,8 @@ app.post('/api/import', aiRateLimiter, async (req, res) => {
     const config = getAIConfig(req);
 
     try {
-        const fullContent = await callLLMSummary(messages, config);
+        const fullContent = await callLLMSummary(messages, config, { jsonOutput: true });
+        if (!fullContent || !fullContent.trim()) throw new Error('模型返回了空的 JSON 内容');
         const chunkData = { choices: [{ delta: { content: fullContent } }] };
 
         res.write(`data: ${JSON.stringify(chunkData)}\n\n`);

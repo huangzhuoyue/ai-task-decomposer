@@ -22,6 +22,13 @@ test('browser core is exposed with a schema version', () => {
     assert.equal(Core.SCHEMA_VERSION, 2);
 });
 
+test('parseGeneratedTree accepts JSON object and legacy array output', () => {
+    assert.equal(Core.parseGeneratedTree('{"mainNodes":[{"id":"a"}]}')[0].id, 'a');
+    assert.equal(Core.parseGeneratedTree('[{"id":"b"}]')[0].id, 'b');
+    assert.throws(() => Core.parseGeneratedTree('{"items":[]}'), /mainNodes/);
+    assert.throws(() => Core.parseGeneratedTree(''), /为空/);
+});
+
 test('normalizeTree supplies defaults without mutating input', () => {
     const input = { mainNodes: [{ id: 'a', title: ' A ' }] };
     const result = Core.normalizeTree(input);

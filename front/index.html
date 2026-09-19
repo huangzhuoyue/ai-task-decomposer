@@ -2463,8 +2463,7 @@
                 await fetchSSE(endpoint, payload, (streamText, isComplete) => {
                     if (isComplete) {
                         try {
-                            const cleanJson = streamText.replace(/```json/gi, '').replace(/```/g, '').trim();
-                            state.mainNodes = JSON.parse(cleanJson); state.progressNodes = {};
+                            state.mainNodes = Core.parseGeneratedTree(streamText); state.progressNodes = {};
                             
                             // 重置撤销栈
                             state.undoStack = [];

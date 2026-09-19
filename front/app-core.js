@@ -15,6 +15,17 @@
         return normalized || fallback;
     }
 
+    function parseGeneratedTree(value) {
+        const source = typeof value === 'string'
+            ? value.replace(/```json/gi, '').replace(/```/g, '').trim()
+            : value;
+        if (!source) throw new Error('AI 返回内容为空');
+        const parsed = typeof source === 'string' ? JSON.parse(source) : source;
+        const nodes = Array.isArray(parsed) ? parsed : parsed?.mainNodes;
+        if (!Array.isArray(nodes)) throw new Error('AI 返回的 JSON 缺少 mainNodes 数组');
+        return nodes;
+    }
+
     function makeId(prefix = 'node') {
         if (global.crypto && typeof global.crypto.randomUUID === 'function') return `${prefix}-${global.crypto.randomUUID()}`;
         return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -465,7 +476,7 @@
     }
 
     global.TaskTreeCore = Object.freeze({
-        SCHEMA_VERSION, clone, makeId, normalizeTree, analyzeTree, diagnoseTree, repairTree, buildIndex,
+        SCHEMA_VERSION, clone, makeId, parseGeneratedTree, normalizeTree, analyzeTree, diagnoseTree, repairTree, buildIndex,
         descendantsOf, ancestorsOf, searchTree, exportTree, importTree,
         toMarkdown, downloadText, debounce, createSaveQueue, createSSEParser,
         normalizeApiProfile, normalizeDeveloperSettings, buildDeveloperHeaders, escapeHtml
