@@ -2054,9 +2054,9 @@
 
         /**
          * 通用 MD3 对话框
-         * @param {Object} options - { title, content, fields: [{label, type, key, value, placeholder}], confirmText, cancelText }
+         * @param {Object} options - { title, content, fields, confirmText, cancelText, showCancel }
          */
-        function showMdDialog({ title, content, fields = [], confirmText = '确认', cancelText = '取消' }) {
+        function showMdDialog({ title, content, fields = [], confirmText = '确认', cancelText = '取消', showCancel = true }) {
             return new Promise((resolve) => {
                 elements.mdDialogTitle.innerText = title;
                 elements.mdDialogContent.innerHTML = content ? `<p>${content}</p>` : '';
@@ -2096,6 +2096,7 @@
 
                 elements.mdDialogConfirm.innerText = confirmText;
                 elements.mdDialogCancel.innerText = cancelText;
+                elements.mdDialogCancel.style.display = showCancel ? '' : 'none';
                 elements.mdDialogOverlay.classList.add('visible');
 
                 const cleanup = (result) => {
@@ -2110,8 +2111,8 @@
                     fields.forEach(f => { fieldValues[f.key] = f.el.value; });
                     cleanup(fields.length ? fieldValues : true);
                 };
-                elements.mdDialogCancel.onclick = () => cleanup(null);
-                elements.mdDialogOverlay.onclick = (e) => { if (e.target === elements.mdDialogOverlay) cleanup(null); };
+                elements.mdDialogCancel.onclick = showCancel ? () => cleanup(null) : null;
+                elements.mdDialogOverlay.onclick = (e) => { if (showCancel && e.target === elements.mdDialogOverlay) cleanup(null); };
                 
                 // 聚焦第一个输入框
                 if (fields.length) setTimeout(() => fields[0].el.focus(), 100);
@@ -2504,14 +2505,14 @@
                 content: `共 ${stats.nodes} 个节点，其中 ${stats.completed} 个已完成（${stats.completionRate}%）。<br>
                     根任务 ${stats.roots} 个，叶子任务 ${stats.leaves} 个，最大层级 ${stats.maxDepth} 层。<br>
                     已生成 ${stats.progressCount} 条执行进度；高优先级任务 ${stats.priorities.high} 个。`,
-                confirmText: '知道了', cancelText: '关闭'
+                confirmText: '知道了', showCancel: false
             });
         }
 
         async function showTreeDiagnosis() {
             const diagnosis = Core.diagnoseTree(getTreeSnapshot());
             if (diagnosis.valid) {
-                await showMdDialog({ title: '完整性诊断', content: `任务树结构正常，共检查 ${diagnosis.summary.nodes} 个节点，未发现异常。`, confirmText: '完成', cancelText: '关闭' });
+                await showMdDialog({ title: '完整性诊断', content: `任务树结构正常，共检查 ${diagnosis.summary.nodes} 个节点，未发现异常。`, confirmText: '完成', showCancel: false });
                 return;
             }
             const preview = diagnosis.issues.slice(0, 8).map(issue => `• ${Core.escapeHtml(issue.message)}`).join('<br>');
@@ -2532,7 +2533,7 @@
             await showMdDialog({
                 title: '修复完成',
                 content: `已完成 ${repaired.repairs.length} 项修复。当前剩余错误 ${repaired.diagnosis.summary.errors} 个、警告 ${repaired.diagnosis.summary.warnings} 个。`,
-                confirmText: '完成', cancelText: '关闭'
+                confirmText: '完成', showCancel: false
             });
         }
 
