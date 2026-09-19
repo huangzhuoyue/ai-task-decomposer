@@ -141,8 +141,9 @@
             font: inherit;
         }
         .tree-tool-btn {
+            width: 34px;
             height: 34px;
-            padding: 0 10px;
+            padding: 0;
             border: 1px solid var(--md-sys-color-outline-variant);
             border-radius: 18px;
             background: transparent;
@@ -152,9 +153,11 @@
             align-items: center;
             gap: 4px;
             white-space: nowrap;
+            justify-content: center;
         }
         .tree-tool-btn:hover { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-primary); }
         .tree-tool-btn .material-icons-round { font-size: 18px; }
+        .tree-tools .tool-label, .save-indicator { display: none; }
         .tree-layout-select {
             height: 34px;
             max-width: 112px;
@@ -209,6 +212,16 @@
             cursor: pointer; display: inline-flex; padding: 2px;
         }
         .node-bubble.completed .node-complete-btn { color: #2e7d32; }
+        body.tree-regenerating .tree-container,
+        body.tree-regenerating .tree-tools,
+        body.tree-regenerating .config-toggle-btn,
+        body.tree-regenerating .top-bar-actions { pointer-events: none; opacity: .55; }
+        .tree-diff-summary { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); font-size: 13px; line-height: 1.55; }
+        .tree-diff-node { margin: 5px 0; padding: 7px 9px; border-radius: 8px; font-size: 13px; border-left: 3px solid transparent; }
+        .tree-diff-node.added { background: #e8f5e9; border-left-color: #2e7d32; }
+        .tree-diff-node.removed { background: #ffebee; border-left-color: #b3261e; text-decoration: line-through; }
+        .tree-diff-node.changed { background: #fff8e1; border-left-color: #f57c00; }
+        .tree-diff-node.unchanged { color: var(--md-sys-color-on-surface-variant); }
         .priority-high { border-top: 4px solid #b3261e; }
         .priority-low { border-top: 4px solid #2e7d32; }
         .node-priority-btn {
@@ -622,6 +635,7 @@
             height: 20px;
         }
 
+        /* Left-to-right alternative. Tree data stays unchanged; only flow and connectors rotate. */
         .tree.layout-horizontal {
             justify-content: flex-start;
             align-items: center;
@@ -1334,6 +1348,11 @@
             right: 24px;
             width: 350px;
             height: 450px;
+            min-width: min(300px, calc(100vw - 48px));
+            min-height: min(300px, calc(100vh - 48px));
+            max-width: calc(100vw - 48px);
+            max-height: calc(100vh - 48px);
+            box-sizing: border-box;
             background: var(--md-sys-color-surface);
             border-radius: 20px;
             box-shadow: var(--md-sys-elevation-3);
@@ -1344,7 +1363,7 @@
             transform: translateY(20px);
             opacity: 0;
             pointer-events: none;
-            transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .global-chat-panel.visible {
@@ -1366,7 +1385,10 @@
 
         .chat-messages {
             flex: 1;
+            min-width: 0;
+            min-height: 0;
             overflow-y: auto;
+            overflow-x: hidden;
             padding: 16px;
             display: flex;
             flex-direction: column;
@@ -1375,10 +1397,45 @@
 
         .chat-bubble {
             max-width: 85%;
+            box-sizing: border-box;
             padding: 10px 14px;
             border-radius: 16px;
             font-size: 13px;
             line-height: 1.5;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+        .chat-bubble > * { max-width: 100%; }
+        .chat-bubble pre { overflow-x: auto; white-space: pre-wrap; }
+        .chat-bubble img, .chat-bubble table { max-width: 100%; }
+
+        .chat-resize-handle { position: absolute; z-index: 5; }
+        .chat-resize-handle[data-resize="n"], .chat-resize-handle[data-resize="s"] { left: 12px; right: 12px; height: 8px; cursor: ns-resize; }
+        .chat-resize-handle[data-resize="n"] { top: -4px; }
+        .chat-resize-handle[data-resize="s"] { bottom: -4px; }
+        .chat-resize-handle[data-resize="e"], .chat-resize-handle[data-resize="w"] { top: 12px; bottom: 12px; width: 8px; cursor: ew-resize; }
+        .chat-resize-handle[data-resize="e"] { right: -4px; }
+        .chat-resize-handle[data-resize="w"] { left: -4px; }
+        .chat-resize-handle[data-resize="ne"], .chat-resize-handle[data-resize="nw"],
+        .chat-resize-handle[data-resize="se"], .chat-resize-handle[data-resize="sw"] { width: 14px; height: 14px; }
+        .chat-resize-handle[data-resize="ne"] { top: -5px; right: -5px; cursor: nesw-resize; }
+        .chat-resize-handle[data-resize="nw"] { top: -5px; left: -5px; cursor: nwse-resize; }
+        .chat-resize-handle[data-resize="se"] { right: -5px; bottom: -5px; cursor: nwse-resize; }
+        .chat-resize-handle[data-resize="sw"] { bottom: -5px; left: -5px; cursor: nesw-resize; }
+        body.resizing-chat { cursor: grabbing; user-select: none; }
+
+        @media (max-width: 760px) {
+            .global-chat-panel {
+                right: 10px;
+                bottom: 10px;
+                width: calc(100vw - 20px) !important;
+                height: min(560px, calc(100vh - 20px)) !important;
+                min-width: 0;
+                min-height: 280px;
+                max-width: none;
+                max-height: none;
+            }
+            .chat-resize-handle { display: none; }
         }
 
         .chat-bubble.user {
@@ -1540,6 +1597,101 @@
             gap: 8px;
         }
 
+        /* Tree diff uses the available desktop width; generic dialogs stay compact. */
+        .md-dialog.tree-diff-dialog {
+            width: min(1180px, calc(100vw - 48px));
+            max-width: none;
+            height: min(820px, calc(100vh - 48px));
+            max-height: none;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .tree-diff-dialog > .md-dialog-title {
+            flex: 0 0 auto;
+            padding: 24px 28px 16px;
+            margin: 0;
+        }
+
+        .tree-diff-dialog > .tree-diff-summary {
+            flex: 0 0 auto;
+            margin: 0 28px 14px;
+            padding: 12px 16px;
+            border-radius: 10px;
+        }
+
+        .tree-diff-grid {
+            display: flex;
+            flex: 1 1 auto;
+            min-height: 0;
+            margin: 0 28px;
+            border: 1px solid var(--md-sys-color-outline-variant);
+            border-radius: 12px;
+            overflow: hidden;
+            background: var(--md-sys-color-surface);
+        }
+
+        .tree-diff-pane {
+            flex: 1 1 0;
+            min-width: 0;
+            padding: 16px 18px;
+            overflow-x: hidden;
+            overflow-y: auto;
+            background: var(--md-sys-color-surface);
+            scrollbar-gutter: stable;
+        }
+
+        .tree-diff-pane + .tree-diff-pane {
+            border-left: 1px solid var(--md-sys-color-outline-variant);
+        }
+
+        .tree-diff-pane h3 {
+            position: sticky;
+            top: -16px;
+            z-index: 1;
+            margin: -16px -18px 12px;
+            padding: 14px 18px;
+            background: color-mix(in srgb, var(--md-sys-color-surface) 96%, transparent);
+            border-bottom: 1px solid var(--md-sys-color-outline-variant);
+            backdrop-filter: blur(8px);
+        }
+
+        .tree-diff-node {
+            max-width: 100%;
+            line-height: 1.5;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            word-break: normal;
+        }
+
+        .tree-diff-node strong { display: block; margin-bottom: 2px; }
+
+        .tree-diff-dialog > .md-dialog-actions {
+            flex: 0 0 auto;
+            padding: 16px 28px 22px;
+            background: var(--md-sys-color-surface);
+        }
+
+        .tree-diff-dialog > .md-dialog-actions .md-button { min-width: 160px; }
+
+        @media (max-width: 760px) {
+            .md-dialog.tree-diff-dialog {
+                width: calc(100vw - 20px);
+                height: calc(100vh - 20px);
+                border-radius: 24px;
+            }
+            .tree-diff-dialog > .md-dialog-title { padding: 20px 20px 14px; }
+            .tree-diff-dialog > .tree-diff-summary { margin: 0 20px 12px; }
+            .tree-diff-grid { flex-direction: column; margin: 0 20px; }
+            .tree-diff-pane { flex: 1 1 50%; padding: 14px; }
+            .tree-diff-pane + .tree-diff-pane { border-left: 0; border-top: 1px solid var(--md-sys-color-outline-variant); }
+            .tree-diff-pane h3 { top: -14px; margin: -14px -14px 10px; padding: 12px 14px; }
+            .tree-diff-dialog > .md-dialog-actions { padding: 14px 20px 18px; }
+            .tree-diff-dialog > .md-dialog-actions .md-button { flex: 1 1 0; min-width: 0; }
+        }
+
         /* Progress Preview Enhancements */
         .progress-preview-container {
             display: flex;
@@ -1657,16 +1809,17 @@
     <div class="tree-tools" id="treeTools" aria-label="任务树工具">
         <span class="material-icons-round" style="font-size:20px;color:var(--md-sys-color-outline)">search</span>
         <input class="tree-search" id="treeSearch" type="search" placeholder="搜索节点标题或描述" aria-label="搜索任务节点">
-        <button class="tree-tool-btn" id="statsBtn" title="查看任务概览"><span class="material-icons-round">analytics</span><span class="tool-label">概览</span></button>
-        <button class="tree-tool-btn" id="diagnoseBtn" title="检查任务树完整性"><span class="material-icons-round">fact_check</span><span class="tool-label">诊断</span></button>
-        <button class="tree-tool-btn" id="backupBtn" title="导出 JSON 备份"><span class="material-icons-round">download</span><span class="tool-label">备份</span></button>
-        <button class="tree-tool-btn" id="restoreBtn" title="导入 JSON 备份"><span class="material-icons-round">upload</span><span class="tool-label">恢复</span></button>
+        <button class="tree-tool-btn" id="statsBtn" title="查看任务概览" aria-label="查看任务概览"><span class="material-icons-round">analytics</span><span class="tool-label">概览</span></button>
+        <button class="tree-tool-btn" id="diagnoseBtn" title="检查任务树完整性" aria-label="检查任务树完整性"><span class="material-icons-round">fact_check</span><span class="tool-label">诊断</span></button>
+        <button class="tree-tool-btn" id="backupBtn" title="导出 JSON 备份" aria-label="导出 JSON 备份"><span class="material-icons-round">download</span><span class="tool-label">备份</span></button>
+        <button class="tree-tool-btn" id="restoreBtn" title="导入 JSON 备份" aria-label="导入 JSON 备份"><span class="material-icons-round">upload</span><span class="tool-label">恢复</span></button>
         <label for="treeLayoutSelect" class="tool-label" style="font-size:12px;color:var(--md-sys-color-outline)">布局</label>
         <select class="tree-layout-select" id="treeLayoutSelect" title="选择任务树优先展开方向" aria-label="任务树渲染方向">
-            <option value="vertical">竖版优先</option>
-            <option value="horizontal">横版优先</option>
+            <option value="vertical">纵向优先</option>
+            <option value="horizontal">横向优先</option>
         </select>
-        <button class="tree-tool-btn" id="cancelRequestBtn" title="取消当前 AI 请求" style="display:none"><span class="material-icons-round">stop_circle</span><span class="tool-label">停止</span></button>
+        <button class="tree-tool-btn" id="cancelRequestBtn" title="取消当前 AI 请求" aria-label="取消当前 AI 请求" style="display:none"><span class="material-icons-round">stop_circle</span><span class="tool-label">停止</span></button>
+        <span class="save-indicator" id="saveIndicator" role="status">本地状态</span>
         <input id="restoreFileInput" type="file" accept="application/json,.json" hidden>
     </div>
 
@@ -1883,6 +2036,14 @@
     </div>
 
     <div class="global-chat-panel" id="globalChatPanel">
+        <span class="chat-resize-handle" data-resize="n" aria-hidden="true"></span>
+        <span class="chat-resize-handle" data-resize="ne" aria-hidden="true"></span>
+        <span class="chat-resize-handle" data-resize="e" aria-hidden="true"></span>
+        <span class="chat-resize-handle" data-resize="se" aria-hidden="true"></span>
+        <span class="chat-resize-handle" data-resize="s" aria-hidden="true"></span>
+        <span class="chat-resize-handle" data-resize="sw" aria-hidden="true"></span>
+        <span class="chat-resize-handle" data-resize="w" aria-hidden="true"></span>
+        <span class="chat-resize-handle" data-resize="nw" aria-hidden="true"></span>
         <div class="chat-header">
             <span>项目全景助手</span>
             <button id="closeChatBtn" style="border:none; color:inherit; background:none; cursor:pointer; display:flex;">
@@ -1897,6 +2058,22 @@
             <button class="chat-send-btn" id="sendChatBtn">
                 <span class="material-icons-round">send</span>
             </button>
+        </div>
+    </div>
+
+    <!-- Universal MD3 Dialog -->
+    <div class="md-dialog-overlay" id="treeDiffOverlay">
+        <div class="md-dialog tree-diff-dialog">
+            <div class="md-dialog-title">任务树重绘对比</div>
+            <div class="tree-diff-summary" id="treeDiffSummary"></div>
+            <div class="tree-diff-grid">
+                <section class="tree-diff-pane"><h3>当前任务树</h3><div id="treeDiffBefore"></div></section>
+                <section class="tree-diff-pane"><h3>重绘提案</h3><div id="treeDiffAfter"></div></section>
+            </div>
+            <div class="md-dialog-actions">
+                <button class="md-button" id="keepCurrentTreeBtn">保留当前版本</button>
+                <button class="md-button md-button-primary" id="applyRegeneratedTreeBtn">应用重绘版本</button>
+            </div>
         </div>
     </div>
 
@@ -2015,6 +2192,7 @@
             restoreFileInput: document.getElementById('restoreFileInput'),
             treeLayoutSelect: document.getElementById('treeLayoutSelect'),
             cancelRequestBtn: document.getElementById('cancelRequestBtn'),
+            saveIndicator: document.getElementById('saveIndicator'),
             saveToast: document.getElementById('saveToast'),
             saveToastIcon: document.getElementById('saveToastIcon'),
             saveToastText: document.getElementById('saveToastText')
@@ -2025,6 +2203,14 @@
             localStorage.setItem('tree_layout_preference', state.treeLayout);
             renderTree();
             requestAnimationFrame(() => elements.treeContainer.scrollTo({ top: 0, left: 0, behavior: 'smooth' }));
+        });
+        Object.assign(elements, {
+            treeDiffOverlay: document.getElementById('treeDiffOverlay'),
+            treeDiffSummary: document.getElementById('treeDiffSummary'),
+            treeDiffBefore: document.getElementById('treeDiffBefore'),
+            treeDiffAfter: document.getElementById('treeDiffAfter'),
+            keepCurrentTreeBtn: document.getElementById('keepCurrentTreeBtn'),
+            applyRegeneratedTreeBtn: document.getElementById('applyRegeneratedTreeBtn')
         });
         Object.assign(elements, {
             auditLogList: document.getElementById('auditLogList'), auditPager: document.getElementById('auditPager'),
@@ -2349,6 +2535,98 @@
         elements.sendChatBtn.addEventListener('click', handleGlobalChat);
         elements.chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleGlobalChat(); });
 
+        const CHAT_PANEL_MARGIN = 12;
+        const CHAT_PANEL_MIN_WIDTH = 300;
+        const CHAT_PANEL_MIN_HEIGHT = 300;
+
+        function getStoredChatSize() {
+            try {
+                const value = JSON.parse(localStorage.getItem('global_chat_panel_size') || 'null');
+                return value && Number.isFinite(value.width) && Number.isFinite(value.height) ? value : null;
+            } catch {
+                return null;
+            }
+        }
+
+        function applyChatPanelSize() {
+            const panel = elements.globalChatPanel;
+            if (window.matchMedia('(max-width: 760px)').matches) {
+                ['left', 'top', 'right', 'bottom', 'width', 'height'].forEach(property => panel.style.removeProperty(property));
+                return;
+            }
+            const stored = getStoredChatSize();
+            const maxWidth = Math.max(120, window.innerWidth - 48);
+            const maxHeight = Math.max(120, window.innerHeight - 48);
+            const minWidth = Math.min(CHAT_PANEL_MIN_WIDTH, maxWidth);
+            const minHeight = Math.min(CHAT_PANEL_MIN_HEIGHT, maxHeight);
+            panel.style.width = `${Math.min(maxWidth, Math.max(minWidth, stored?.width || 350))}px`;
+            panel.style.height = `${Math.min(maxHeight, Math.max(minHeight, stored?.height || 450))}px`;
+            panel.style.left = 'auto';
+            panel.style.top = 'auto';
+            panel.style.right = '24px';
+            panel.style.bottom = '24px';
+        }
+
+        function startChatResize(event) {
+            if (window.matchMedia('(max-width: 760px)').matches) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const handle = event.currentTarget;
+            const direction = handle.dataset.resize;
+            const panel = elements.globalChatPanel;
+            const startRect = panel.getBoundingClientRect();
+            const startX = event.clientX;
+            const startY = event.clientY;
+            panel.style.left = `${startRect.left}px`;
+            panel.style.top = `${startRect.top}px`;
+            panel.style.right = 'auto';
+            panel.style.bottom = 'auto';
+            document.body.classList.add('resizing-chat');
+            handle.setPointerCapture(event.pointerId);
+
+            const move = moveEvent => {
+                const deltaX = moveEvent.clientX - startX;
+                const deltaY = moveEvent.clientY - startY;
+                let left = startRect.left;
+                let right = startRect.right;
+                let top = startRect.top;
+                let bottom = startRect.bottom;
+                const minWidth = Math.min(CHAT_PANEL_MIN_WIDTH, window.innerWidth - CHAT_PANEL_MARGIN * 2);
+                const minHeight = Math.min(CHAT_PANEL_MIN_HEIGHT, window.innerHeight - CHAT_PANEL_MARGIN * 2);
+
+                if (direction.includes('w')) left = Math.max(CHAT_PANEL_MARGIN, Math.min(startRect.left + deltaX, right - minWidth));
+                if (direction.includes('e')) right = Math.min(window.innerWidth - CHAT_PANEL_MARGIN, Math.max(startRect.right + deltaX, left + minWidth));
+                if (direction.includes('n')) top = Math.max(CHAT_PANEL_MARGIN, Math.min(startRect.top + deltaY, bottom - minHeight));
+                if (direction.includes('s')) bottom = Math.min(window.innerHeight - CHAT_PANEL_MARGIN, Math.max(startRect.bottom + deltaY, top + minHeight));
+
+                panel.style.left = `${left}px`;
+                panel.style.top = `${top}px`;
+                panel.style.width = `${right - left}px`;
+                panel.style.height = `${bottom - top}px`;
+            };
+
+            const finish = () => {
+                const rect = panel.getBoundingClientRect();
+                panel.style.left = 'auto';
+                panel.style.top = 'auto';
+                panel.style.right = `${Math.max(CHAT_PANEL_MARGIN, window.innerWidth - rect.right)}px`;
+                panel.style.bottom = `${Math.max(CHAT_PANEL_MARGIN, window.innerHeight - rect.bottom)}px`;
+                localStorage.setItem('global_chat_panel_size', JSON.stringify({ width: Math.round(rect.width), height: Math.round(rect.height) }));
+                document.body.classList.remove('resizing-chat');
+                handle.removeEventListener('pointermove', move);
+                handle.removeEventListener('pointerup', finish);
+                handle.removeEventListener('pointercancel', finish);
+            };
+
+            handle.addEventListener('pointermove', move);
+            handle.addEventListener('pointerup', finish);
+            handle.addEventListener('pointercancel', finish);
+        }
+
+        elements.globalChatPanel.querySelectorAll('.chat-resize-handle').forEach(handle => handle.addEventListener('pointerdown', startChatResize));
+        window.addEventListener('resize', Core.debounce(applyChatPanelSize, 120));
+        applyChatPanelSize();
+
         // 拖拽与缩放逻辑
         let isDown = false;
         let startX, startY, scrollLeft, scrollTop;
@@ -2488,6 +2766,7 @@
             const decoder = new TextDecoder();
             let fullText = '';
             const parser = Core.createSSEParser(payload => {
+                if (options.onPayload) options.onPayload(payload);
                 const content = payload.choices?.[0]?.delta?.content || '';
                 if (content) { fullText += content; if (onUpdate) onUpdate(fullText, false); }
             });
@@ -2898,6 +3177,73 @@
             if (state.currentTreeId) saveQueue.enqueue(getTreeSnapshot());
         }
 
+        function setTreeRegenerating(active) {
+            document.body.classList.toggle('tree-regenerating', active);
+            elements.chatInput.disabled = active;
+            elements.sendChatBtn.disabled = active;
+        }
+
+        function buildDiffRows(tree, otherTree, side) {
+            const otherById = new Map(otherTree.mainNodes.map(node => [String(node.id), node]));
+            const children = Core.buildIndex(tree.mainNodes).children;
+            const rows = [];
+            const visit = (node, depth) => {
+                const other = otherById.get(String(node.id));
+                let status = side === 'before' ? 'removed' : 'added';
+                if (other) {
+                    const changed = node.title !== other.title || node.desc !== other.desc || String(node.parentId) !== String(other.parentId) || node.priority !== other.priority;
+                    status = changed ? 'changed' : 'unchanged';
+                }
+                rows.push(`<div class="tree-diff-node ${status}" style="margin-left:${depth * 18}px"><strong>${Core.escapeHtml(node.title)}</strong><br><span>${Core.escapeHtml(node.desc || '无描述')}</span></div>`);
+                (children.get(String(node.id)) || []).forEach(child => visit(child, depth + 1));
+            };
+            (children.get(null) || []).forEach(root => visit(root, 0));
+            return rows.join('') || '<div class="empty-state"><p>无节点</p></div>';
+        }
+
+        function showTreeDiff(currentTree, proposal, summary) {
+            elements.treeDiffSummary.textContent = `当前 ${summary.beforeNodes} 个节点，重绘后 ${summary.afterNodes} 个节点；继承 ${summary.inheritedCompleted} 个完成状态和 ${summary.inheritedProgress} 条进度。绿色为新增，红色为移除，黄色为修改。`;
+            elements.treeDiffBefore.innerHTML = buildDiffRows(currentTree, proposal, 'before');
+            elements.treeDiffAfter.innerHTML = buildDiffRows(proposal, currentTree, 'after');
+            elements.treeDiffOverlay.classList.add('visible');
+            return new Promise(resolve => {
+                const finish = apply => {
+                    elements.treeDiffOverlay.classList.remove('visible');
+                    elements.keepCurrentTreeBtn.onclick = null;
+                    elements.applyRegeneratedTreeBtn.onclick = null;
+                    resolve(apply);
+                };
+                elements.keepCurrentTreeBtn.onclick = () => finish(false);
+                elements.applyRegeneratedTreeBtn.onclick = () => finish(true);
+            });
+        }
+
+        async function executeTreeRegeneration(action) {
+            const token = localStorage.getItem('jwt_token');
+            if (!token || !state.currentTreeId) throw new Error('重新生成任务树需要登录并先保存当前任务树');
+            const currentTree = Core.clone(getTreeSnapshot());
+            let proposalPayload = null;
+            await fetchSSE(`${API_BASE}/api/trees/${state.currentTreeId}/regenerate`, {
+                instruction: action.instruction,
+                options: { preserveCompleted: true, preserveProgress: true }
+            }, null, {
+                timeoutMs: 180000,
+                onPayload(payload) {
+                    if (payload.type === 'proposal') proposalPayload = payload;
+                    if (payload.type === 'error') throw new Error(payload.error);
+                }
+            });
+            if (!proposalPayload?.proposal) throw new Error('后端没有返回有效的重绘提案');
+            const apply = await showTreeDiff(currentTree, proposalPayload.proposal, proposalPayload.summary);
+            if (!apply) return false;
+            pushState();
+            state.mainNodes = proposalPayload.proposal.mainNodes;
+            state.progressNodes = proposalPayload.proposal.progressNodes;
+            renderTree();
+            saveCurrentTree();
+            return true;
+        }
+
         // --- 全局问答逻辑 ---
         async function handleGlobalChat() {
             const question = elements.chatInput.value.trim();
@@ -2911,6 +3257,7 @@
             
             try {
                 let fullText = '';
+                let treeAction = null;
                 await fetchSSE(`${API_BASE}/api/chat-tree`, {
                     treeId: state.currentTreeId,
                     treeData: { mainNodes: state.mainNodes, progressNodes: state.progressNodes },
@@ -2924,10 +3271,22 @@
                         state.globalHistory.push({ role: 'user', content: question });
                         state.globalHistory.push({ role: 'assistant', content: fullText });
                     }
-                }, { aiScope: 'panorama' });
+                }, {
+                    aiScope: 'panorama',
+                    onPayload(payload) {
+                        if (payload.type === 'tree_action' && payload.action === 'regenerate_tree') treeAction = payload;
+                    }
+                });
+                if (treeAction) {
+                    aiBubble.textContent = '收到你的修改请求，正在重绘...';
+                    setTreeRegenerating(true);
+                    const applied = await executeTreeRegeneration(treeAction);
+                    aiBubble.textContent = applied ? '任务树已按你的确认完成重绘。' : '已保留当前任务树，未应用重绘提案。';
+                }
             } catch (err) {
                 aiBubble.innerText = '出错了: ' + err.message;
             } finally {
+                setTreeRegenerating(false);
                 state.isProcessing = false;
             }
         }
