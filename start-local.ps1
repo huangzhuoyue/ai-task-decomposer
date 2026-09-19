@@ -8,5 +8,5 @@ if (-not (Test-Path -LiteralPath (Join-Path $BackendPath 'node_modules'))) {
 }
 
 Write-Host '正在启动 AI 任务分解系统...'
-Write-Host '浏览器访问：http://localhost:3000'
+Write-Host '浏览器访问：http://localhost:3200'
 npm start --prefix $BackendPath

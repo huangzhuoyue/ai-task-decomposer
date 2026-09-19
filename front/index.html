@@ -1713,25 +1713,32 @@
                     <input type="text" id="devModel" class="md-textfield" placeholder="默认：系统模型">
                     <div class="field-label" style="font-size: 12px; color: var(--md-sys-color-primary); font-weight: 600;">CUSTOM BODY (JSON)</div>
                     <textarea id="devCustomBody" class="md-textfield md-textarea" style="min-height: 80px;" placeholder="例如: {&quot;temperature&quot;: 0.7}"></textarea>
-                    <hr style="border:none;border-top:1px solid var(--md-sys-color-outline-variant);width:100%;margin:6px 0">
-                    <div style="font-size:13px;font-weight:600;color:var(--md-sys-color-on-surface)">全景概览助手</div>
-                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px">
-                        <input type="checkbox" id="panoramaSameAsPrimary" checked style="width:18px;height:18px">
-                        与主模型使用相同 API 配置
-                    </label>
-                    <div id="panoramaApiFields" style="display:none;flex-direction:column;gap:12px;padding:12px;border:1px solid var(--md-sys-color-outline-variant);border-radius:12px">
-                        <div class="field-label" style="font-size:12px;color:var(--md-sys-color-primary);font-weight:600">API KEY</div>
-                        <input type="password" id="panoramaApiKey" class="md-textfield" placeholder="全景助手专用 API Key">
-                        <div class="field-label" style="font-size:12px;color:var(--md-sys-color-primary);font-weight:600">BASE URL</div>
-                        <input type="text" id="panoramaBaseUrl" class="md-textfield" placeholder="例如：https://api.deepseek.com/chat/completions">
-                        <div class="field-label" style="font-size:12px;color:var(--md-sys-color-primary);font-weight:600">MODEL NAME</div>
-                        <input type="text" id="panoramaModel" class="md-textfield" placeholder="全景助手模型名称">
-                        <div class="field-label" style="font-size:12px;color:var(--md-sys-color-primary);font-weight:600">CUSTOM BODY (JSON)</div>
-                        <textarea id="panoramaCustomBody" class="md-textfield md-textarea" style="min-height:70px" placeholder="例如：{&quot;temperature&quot;: 0.3}"></textarea>
-                    </div>
                     <div style="font-size: 12px; color: var(--md-sys-color-on-surface-variant); line-height: 1.4;">
                         * 配置仅保存在当前浏览器，请求时通过 Header 透传。支持 OpenAI 兼容接口。
                     </div>
+                </div>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid var(--md-sys-color-outline-variant); margin: 24px 0;">
+
+            <div class="form-section" id="panoramaApiSection">
+                <div class="section-title"><span class="material-icons-round">travel_explore</span> 全景概览助手 API</div>
+                <div style="font-size:12px;color:var(--md-sys-color-on-surface-variant);margin-bottom:12px;line-height:1.5">
+                    此入口始终可见；需启用上方开发者模式后才会应用自定义配置。
+                </div>
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;margin-bottom:12px">
+                    <input type="checkbox" id="panoramaSameAsPrimary" checked style="width:18px;height:18px">
+                    与主模型使用相同 API 配置
+                </label>
+                <div id="panoramaApiFields" style="display:none;flex-direction:column;gap:12px;padding:12px;border:1px solid var(--md-sys-color-outline-variant);border-radius:12px">
+                    <div class="field-label" style="font-size:12px;color:var(--md-sys-color-primary);font-weight:600">API KEY</div>
+                    <input type="password" id="panoramaApiKey" class="md-textfield" placeholder="全景助手专用 API Key">
+                    <div class="field-label" style="font-size:12px;color:var(--md-sys-color-primary);font-weight:600">BASE URL</div>
+                    <input type="text" id="panoramaBaseUrl" class="md-textfield" placeholder="例如：https://api.deepseek.com/chat/completions">
+                    <div class="field-label" style="font-size:12px;color:var(--md-sys-color-primary);font-weight:600">MODEL NAME</div>
+                    <input type="text" id="panoramaModel" class="md-textfield" placeholder="全景助手模型名称">
+                    <div class="field-label" style="font-size:12px;color:var(--md-sys-color-primary);font-weight:600">CUSTOM BODY (JSON)</div>
+                    <textarea id="panoramaCustomBody" class="md-textfield md-textarea" style="min-height:70px" placeholder="例如：{&quot;temperature&quot;: 0.3}"></textarea>
                 </div>
             </div>
 
@@ -1792,7 +1799,7 @@
 
     <script src="app-core.js"></script>
     <script>
-        const API_BASE = window.location.protocol === 'file:' ? 'http://localhost:3000' : window.location.origin;
+        const API_BASE = window.location.protocol === 'file:' ? 'http://localhost:3200' : window.location.origin;
         const Core = window.TaskTreeCore;
         function renderMarkdown(source) {
             const parsed = marked.parse(String(source || ''));

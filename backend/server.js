@@ -9,6 +9,7 @@ const util = require('util');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 const path = require('path');
+const http = require('http');
 const { createRateLimiter } = require('./lib/rate-limit');
 const { analyzeTree } = require('./lib/tree-analytics');
 const {
@@ -39,12 +40,12 @@ const {
 // 环境变量配置
 const JWT_SECRET = process.env.JWT_SECRET || 'b7a25a598a34b518e69dbcbb49db64c';
 const SALT_ROUNDS = 10;
-const API_KEY = process.env.DEEPSEEK_API_KEY || process.env.ZHIPU_API_KEY;
+const API_KEY = process.env.DEEPSEEK_API_KEY;
 const API_URL = process.env.AI_API_URL || 'https://api.deepseek.com/chat/completions';
 const RP_ID = process.env.RP_ID || 'hzyweb.xyz';
 const EXPECTED_ORIGIN = process.env.EXPECTED_ORIGIN
     ? process.env.EXPECTED_ORIGIN.split(',').map(s => s.trim())
-    : ['http://localhost:3000', 'http://127.0.0.1:3000', 'https://hzyweb.xyz', 'https://m.hzyweb.xyz'];
+    : ['http://localhost:3200', 'http://127.0.0.1:3200', 'https://hzyweb.xyz', 'https://m.hzyweb.xyz'];
 if (!process.env.JWT_SECRET) console.warn('[Security] 生产环境必须配置独立的 JWT_SECRET。');
 
 // 腾讯邮箱 SMTP 配置
@@ -206,6 +207,9 @@ const strictAuthMiddleware = (req, res, next) => {
 
 const authRateLimiter = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 30, message: '认证请求过于频繁，请稍后再试' });
 const aiRateLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 20, message: 'AI 请求过于频繁，请稍后再试' });
+const auditWriteRateLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 60, message: '操作日志写入过于频繁，请稍后再试' });
+const auditReadRateLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 120, message: '操作日志查询过于频繁，请稍后再试' });
+const auditDeleteRateLimiter = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 5, message: '操作日志清空过于频繁，请稍后再试' });
 
 function getOwnedTree(treeId, userId) {
     return db.prepare('SELECT id, user_id, title, tree_data, created_at, updated_at FROM user_trees WHERE id = ? AND user_id = ?').get(treeId, userId);
@@ -946,7 +950,7 @@ app.get('/api/trees/:id/stats', strictAuthMiddleware, requireOwnedTree, (req, re
     res.json(analyzeTree(safeJsonParse(req.tree.tree_data, { mainNodes: [], progressNodes: {} })));
 });
 
-app.post('/api/audit-logs', strictAuthMiddleware, (req, res) => {
+app.post('/api/audit-logs', strictAuthMiddleware, auditWriteRateLimiter, (req, res) => {
     try {
         const action = cleanText(req.body.action, { field: '操作类型', max: 40, required: true });
         if (!AUDIT_ACTIONS.has(action)) return res.status(400).json({ error: '不支持的操作类型' });
@@ -961,7 +965,7 @@ app.post('/api/audit-logs', strictAuthMiddleware, (req, res) => {
     }
 });
 
-app.get('/api/audit-logs', strictAuthMiddleware, (req, res) => {
+app.get('/api/audit-logs', strictAuthMiddleware, auditReadRateLimiter, (req, res) => {
     const page = Math.max(1, Math.min(100000, Number.parseInt(req.query.page, 10) || 1));
     const pageSize = Math.max(5, Math.min(50, Number.parseInt(req.query.pageSize, 10) || 20));
     const offset = (page - 1) * pageSize;
@@ -974,7 +978,7 @@ app.get('/api/audit-logs', strictAuthMiddleware, (req, res) => {
     res.json({ items, page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) });
 });
 
-app.delete('/api/audit-logs', strictAuthMiddleware, (req, res) => {
+app.delete('/api/audit-logs', strictAuthMiddleware, auditDeleteRateLimiter, (req, res) => {
     const info = db.prepare('DELETE FROM audit_logs WHERE user_id = ?').run(req.userId);
     res.json({ success: true, deleted: info.changes });
 });
@@ -1096,8 +1100,9 @@ app.use((error, req, res, next) => {
     res.status(500).json({ error: '服务器内部错误' });
 });
 
-const PORT = Number.parseInt(process.env.PORT, 10) || 3000;
-const server = app.listen(PORT, '0.0.0.0', () => {
+const PORT = Number.parseInt(process.env.PORT, 10) || 3200;
+const server = http.createServer(app);
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`AI Task Decomposer is available at http://localhost:${PORT}`);
     console.log(`Database: ${DB_PATH}`);
 });
