@@ -412,8 +412,18 @@
     function createSSEParser(onMessage) {
         let buffer = '';
         let done = false;
+        function readDataLine(line) {
+            const normalized = line.trimStart().replace(/^\uFEFF/, '');
+            if (normalized.startsWith('data:')) return normalized.slice(5).trimStart();
+            const marker = normalized.indexOf('data:');
+            if (marker > 0 && marker <= 8) {
+                const recovered = normalized.slice(marker + 5).trimStart();
+                if (recovered === '[DONE]' || recovered.startsWith('{')) return recovered;
+            }
+            return null;
+        }
         function consumeBlock(block) {
-            const dataLines = block.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart());
+            const dataLines = block.split(/\r?\n/).map(readDataLine).filter(line => line !== null);
             if (!dataLines.length) return;
             const data = dataLines.join('\n');
             if (data === '[DONE]') { done = true; return; }

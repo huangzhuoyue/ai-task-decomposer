@@ -2998,15 +2998,7 @@
                     }
                 });
 
-                if (state.currentTreeId) {
-                    if (token) {
-                        fetch(`${API_BASE}/api/trees/${state.currentTreeId}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                            body: JSON.stringify({ tree_data: { mainNodes: state.mainNodes, progressNodes: state.progressNodes } })
-                        });
-                    }
-                }
+                saveCurrentTree();
             } catch (err) { alert('通信失败: ' + err.message); }
             finally { state.nodeAsking = null; btn.disabled = false; btn.innerText = origTxt; }
         }

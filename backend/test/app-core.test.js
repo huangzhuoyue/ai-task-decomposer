@@ -192,6 +192,15 @@ test('SSE parser emits raw malformed payload information', () => {
     assert.equal(messages[0].data, 'invalid-json');
 });
 
+test('SSE parser tolerates a short provider prefix on final frames', () => {
+    const messages = [];
+    const parser = Core.createSSEParser(message => messages.push(message));
+    parser.push('zdata: {"choices":[{"delta":{"content":""},"finish_reason":"stop"}]}\n\n');
+    assert.equal(parser.push('data: [DONE]\n\n'), true);
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0].choices[0].finish_reason, 'stop');
+});
+
 test('developer settings migrate the legacy primary API shape', () => {
     const settings = Core.normalizeDeveloperSettings({
         enabled: true, apiKey: ' primary-key ', baseUrl: ' https://primary.example/v1 ', model: 'model-a'
