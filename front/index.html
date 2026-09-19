@@ -198,6 +198,19 @@
         .node-bubble.completed .node-complete-btn { color: #2e7d32; }
         .priority-high { border-top: 4px solid #b3261e; }
         .priority-low { border-top: 4px solid #2e7d32; }
+        .node-priority-btn {
+            border: 0;
+            border-radius: 999px;
+            padding: 3px 8px;
+            background: var(--md-sys-color-surface-container-highest);
+            color: var(--md-sys-color-on-surface-variant);
+            font: inherit;
+            font-size: 11px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .node-priority-btn[data-priority="high"] { color: #b3261e; }
+        .node-priority-btn[data-priority="low"] { color: #2e7d32; }
 
         @media (max-width: 760px) {
             .tree-tools { overflow-x: auto; margin: 0 8px; }
@@ -1429,7 +1442,7 @@
             color: var(--md-sys-color-primary);
         }
 
-        .md-dialog-input, .md-dialog-textarea {
+        .md-dialog-input, .md-dialog-textarea, .md-dialog-select {
             width: 100%;
             padding: 12px 16px;
             border-radius: 4px;
@@ -2071,6 +2084,15 @@
                     if (f.type === 'textarea') {
                         input = document.createElement('textarea');
                         input.className = 'md-dialog-textarea';
+                    } else if (f.type === 'select') {
+                        input = document.createElement('select');
+                        input.className = 'md-dialog-select';
+                        (f.options || []).forEach(option => {
+                            const optionEl = document.createElement('option');
+                            optionEl.value = option.value;
+                            optionEl.textContent = option.label;
+                            input.appendChild(optionEl);
+                        });
                     } else {
                         input = document.createElement('input');
                         input.type = f.type || 'text';
@@ -2614,7 +2636,9 @@
                 const dragAttr = state.editMode ? 'draggable="true" ondragstart="handleDragStart(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)"' : '';
                 
                 const safeId = Core.escapeHtml(node.id);
-                const priorityClass = node.priority === 'high' ? 'priority-high' : node.priority === 'low' ? 'priority-low' : '';
+                const nodePriority = ['low', 'normal', 'high'].includes(node.priority) ? node.priority : 'normal';
+                const priorityClass = nodePriority === 'high' ? 'priority-high' : nodePriority === 'low' ? 'priority-low' : '';
+                const priorityLabel = { low: '低优先级', normal: '普通', high: '高优先级' }[nodePriority];
                 let html = `<li><div class="node-container"><div class="node-bubble ${node.completed ? 'completed' : ''} ${priorityClass}" id="node-${safeId}" ${dragAttr} data-id="${safeId}">
                     <div class="node-delete-btn" onclick="confirmDelete('${node.id}')" title="删除节点及后代">
                         <span class="material-icons-round">cancel</span>
@@ -2623,6 +2647,7 @@
                         <button class="node-complete-btn" onclick="toggleNodeCompleted('${safeId}', event)" title="标记完成状态" aria-label="标记完成状态"><span class="material-icons-round">${node.completed ? 'check_circle' : 'radio_button_unchecked'}</span></button>
                         <div class="node-number">${state.mainNodes.indexOf(node) + 1}</div>
                         <div class="node-title">${Core.escapeHtml(node.title)}</div>
+                        <button class="node-priority-btn" data-priority="${nodePriority}" onclick="editNodePriority('${safeId}', event)" title="调整任务优先级">${priorityLabel}</button>
                     </div>
                     <div class="node-desc">${Core.escapeHtml(node.desc)}</div>
                     <div class="node-action">
@@ -2647,7 +2672,12 @@
                 title: '添加子步骤',
                 fields: [
                     { key: 'title', label: '步骤标题', placeholder: '例如：准备环境' },
-                    { key: 'desc', label: '步骤描述', type: 'textarea', placeholder: '详细说明该步骤的操作内容...' }
+                    { key: 'desc', label: '步骤描述', type: 'textarea', placeholder: '详细说明该步骤的操作内容...' },
+                    { key: 'priority', label: '任务优先级', type: 'select', value: 'normal', options: [
+                        { value: 'low', label: '低优先级' },
+                        { value: 'normal', label: '普通' },
+                        { value: 'high', label: '高优先级' }
+                    ] }
                 ]
             });
             
@@ -2657,13 +2687,34 @@
                     id: Date.now().toString(),
                     parentId: parentId,
                     title: res.title,
-                    desc: res.desc || ''
+                    desc: res.desc || '',
+                    priority: res.priority || 'normal'
                 };
                 state.mainNodes.push(newNode);
                 renderTree();
                 saveCurrentTree();
                 postAuditLog('node.create', 'node', newNode.id, `添加节点：${newNode.title}`);
             }
+        };
+
+        window.editNodePriority = async function(nodeId, event) {
+            event?.stopPropagation();
+            const node = state.mainNodes.find(item => String(item.id) === String(nodeId));
+            if (!node) return;
+            const result = await showMdDialog({
+                title: '调整任务优先级',
+                fields: [{ key: 'priority', label: node.title, type: 'select', value: node.priority || 'normal', options: [
+                    { value: 'low', label: '低优先级' },
+                    { value: 'normal', label: '普通' },
+                    { value: 'high', label: '高优先级' }
+                ] }]
+            });
+            if (!result || result.priority === (node.priority || 'normal')) return;
+            pushState();
+            node.priority = result.priority;
+            renderTree();
+            saveCurrentTree();
+            postAuditLog('node.priority', 'node', node.id, `调整节点优先级：${node.title}`);
         };
 
         window.confirmDelete = async function(nodeId) {
@@ -3040,7 +3091,8 @@
         const auditLabels = {
             'tree.create': '创建任务树', 'tree.rename': '重命名任务树', 'tree.delete': '删除任务树',
             'tree.restore': '恢复任务树', 'tree.repair': '修复任务树', 'tree.backup': '备份任务树',
-            'node.complete': '更新完成状态', 'node.create': '添加节点', 'node.delete': '删除节点'
+            'node.complete': '更新完成状态', 'node.create': '添加节点', 'node.delete': '删除节点',
+            'node.priority': '调整优先级'
         };
 
         function postAuditLog(action, targetType, targetId, detail) {
