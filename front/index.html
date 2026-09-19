@@ -155,6 +155,19 @@
         }
         .tree-tool-btn:hover { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-primary); }
         .tree-tool-btn .material-icons-round { font-size: 18px; }
+        .tree-layout-select {
+            height: 34px;
+            max-width: 112px;
+            padding: 0 28px 0 10px;
+            border: 1px solid var(--md-sys-color-outline-variant);
+            border-radius: 18px;
+            background: var(--md-sys-color-surface);
+            color: var(--md-sys-color-on-surface-variant);
+            font: inherit;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .tree-layout-select:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
         .save-toast {
             position: fixed;
             left: 50%;
@@ -607,6 +620,70 @@
             border-left: 2px solid var(--md-sys-color-outline-variant);
             width: 0;
             height: 20px;
+        }
+
+        .tree.layout-horizontal {
+            justify-content: flex-start;
+            align-items: center;
+            transform-origin: left center;
+            padding: 28px 80px 100px 28px;
+        }
+
+        .tree.layout-horizontal ul {
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 0 0 0 28px;
+        }
+
+        .tree.layout-horizontal li {
+            flex-direction: row;
+            align-items: center;
+            text-align: left;
+            padding: 10px 0 10px 28px;
+        }
+
+        .tree.layout-horizontal li::before {
+            display: block;
+            top: 50%;
+            left: 0;
+            right: auto;
+            width: 28px;
+            height: 0;
+            border: 0;
+            border-top: 2px solid var(--md-sys-color-outline-variant);
+        }
+
+        .tree.layout-horizontal li::after {
+            display: block;
+            top: 0;
+            bottom: auto;
+            left: 0;
+            right: auto;
+            width: 0;
+            height: 100%;
+            border: 0;
+            border-left: 2px solid var(--md-sys-color-outline-variant);
+        }
+
+        .tree.layout-horizontal li:first-child::after { top: 50%; height: 50%; }
+        .tree.layout-horizontal li:last-child::after { top: 0; height: 50%; }
+        .tree.layout-horizontal li:only-child::after { display: none; }
+        .tree.layout-horizontal li:only-child { padding-top: 10px; }
+        .tree.layout-horizontal li:only-child::before { display: block; }
+        .tree.layout-horizontal > ul { padding-left: 0; }
+        .tree.layout-horizontal > ul > li { padding-left: 0; }
+        .tree.layout-horizontal > ul > li::before,
+        .tree.layout-horizontal > ul > li::after { display: none; }
+
+        .tree.layout-horizontal ul ul::before {
+            top: 50%;
+            bottom: auto;
+            left: 0;
+            width: 28px;
+            height: 0;
+            border: 0;
+            border-top: 2px solid var(--md-sys-color-outline-variant);
         }
 
         .node-container {
@@ -1584,6 +1661,11 @@
         <button class="tree-tool-btn" id="diagnoseBtn" title="检查任务树完整性"><span class="material-icons-round">fact_check</span><span class="tool-label">诊断</span></button>
         <button class="tree-tool-btn" id="backupBtn" title="导出 JSON 备份"><span class="material-icons-round">download</span><span class="tool-label">备份</span></button>
         <button class="tree-tool-btn" id="restoreBtn" title="导入 JSON 备份"><span class="material-icons-round">upload</span><span class="tool-label">恢复</span></button>
+        <label for="treeLayoutSelect" class="tool-label" style="font-size:12px;color:var(--md-sys-color-outline)">布局</label>
+        <select class="tree-layout-select" id="treeLayoutSelect" title="选择任务树优先展开方向" aria-label="任务树渲染方向">
+            <option value="vertical">竖版优先</option>
+            <option value="horizontal">横版优先</option>
+        </select>
         <button class="tree-tool-btn" id="cancelRequestBtn" title="取消当前 AI 请求" style="display:none"><span class="material-icons-round">stop_circle</span><span class="tool-label">停止</span></button>
         <input id="restoreFileInput" type="file" accept="application/json,.json" hidden>
     </div>
@@ -1879,7 +1961,8 @@
             redoStack: [],
             searchQuery: '',
             activeController: null,
-            lastSavedAt: null
+            lastSavedAt: null,
+            treeLayout: localStorage.getItem('tree_layout_preference') === 'horizontal' ? 'horizontal' : 'vertical'
         };
         const elements = {
             taskInput: document.getElementById('taskInput'), fileUpload: document.getElementById('fileUpload'),
@@ -1930,10 +2013,18 @@
             backupBtn: document.getElementById('backupBtn'),
             restoreBtn: document.getElementById('restoreBtn'),
             restoreFileInput: document.getElementById('restoreFileInput'),
+            treeLayoutSelect: document.getElementById('treeLayoutSelect'),
             cancelRequestBtn: document.getElementById('cancelRequestBtn'),
             saveToast: document.getElementById('saveToast'),
             saveToastIcon: document.getElementById('saveToastIcon'),
             saveToastText: document.getElementById('saveToastText')
+        });
+        elements.treeLayoutSelect.value = state.treeLayout;
+        elements.treeLayoutSelect.addEventListener('change', () => {
+            state.treeLayout = elements.treeLayoutSelect.value === 'horizontal' ? 'horizontal' : 'vertical';
+            localStorage.setItem('tree_layout_preference', state.treeLayout);
+            renderTree();
+            requestAnimationFrame(() => elements.treeContainer.scrollTo({ top: 0, left: 0, behavior: 'smooth' }));
         });
         Object.assign(elements, {
             auditLogList: document.getElementById('auditLogList'), auditPager: document.getElementById('auditPager'),
@@ -2602,6 +2693,8 @@
 
         function renderTree() {
             elements.treeRoot.innerHTML = '';
+            elements.treeRoot.classList.toggle('layout-horizontal', state.treeLayout === 'horizontal');
+            elements.treeRoot.classList.toggle('layout-vertical', state.treeLayout !== 'horizontal');
             
             // 全局问答按钮显示控制
             if (!state.mainNodes.length) { 
