@@ -440,6 +440,7 @@
             enabled: Boolean(raw.enabled),
             primary: normalizeApiProfile(raw.primary || legacyPrimary),
             panorama: {
+                enabled: typeof raw.panorama?.enabled === 'boolean' ? raw.panorama.enabled : Boolean(raw.enabled),
                 sameAsPrimary: raw.panorama?.sameAsPrimary !== false,
                 ...normalizeApiProfile(raw.panorama || {})
             }
@@ -448,7 +449,8 @@
 
     function buildDeveloperHeaders(rawSettings, scope = 'primary') {
         const settings = normalizeDeveloperSettings(rawSettings);
-        if (!settings.enabled) return {};
+        if (scope === 'panorama' && !settings.panorama.enabled) return {};
+        if (scope !== 'panorama' && !settings.enabled) return {};
         const profile = scope === 'panorama' && !settings.panorama.sameAsPrimary ? settings.panorama : settings.primary;
         if (!profile.apiKey) return {};
         const headers = { 'X-Dev-Key': profile.apiKey };

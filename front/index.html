@@ -1723,22 +1723,25 @@
 
             <div class="form-section" id="panoramaApiSection">
                 <div class="section-title"><span class="material-icons-round">travel_explore</span> 全景概览助手 API</div>
-                <div style="font-size:12px;color:var(--md-sys-color-on-surface-variant);margin-bottom:12px;line-height:1.5">
-                    此入口始终可见；需启用上方开发者模式后才会应用自定义配置。
-                </div>
                 <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;margin-bottom:12px">
-                    <input type="checkbox" id="panoramaSameAsPrimary" checked style="width:18px;height:18px">
-                    与主模型使用相同 API 配置
+                    <input type="checkbox" id="panoramaEnabled" style="width:18px;height:18px">
+                    启用全景概览助手自定义 API
                 </label>
-                <div id="panoramaApiFields" style="display:none;flex-direction:column;gap:12px;padding:12px;border:1px solid var(--md-sys-color-outline-variant);border-radius:12px">
-                    <div class="field-label" style="font-size:12px;color:var(--md-sys-color-primary);font-weight:600">API KEY</div>
-                    <input type="password" id="panoramaApiKey" class="md-textfield" placeholder="全景助手专用 API Key">
-                    <div class="field-label" style="font-size:12px;color:var(--md-sys-color-primary);font-weight:600">BASE URL</div>
-                    <input type="text" id="panoramaBaseUrl" class="md-textfield" placeholder="例如：https://api.deepseek.com/chat/completions">
-                    <div class="field-label" style="font-size:12px;color:var(--md-sys-color-primary);font-weight:600">MODEL NAME</div>
-                    <input type="text" id="panoramaModel" class="md-textfield" placeholder="全景助手模型名称">
-                    <div class="field-label" style="font-size:12px;color:var(--md-sys-color-primary);font-weight:600">CUSTOM BODY (JSON)</div>
-                    <textarea id="panoramaCustomBody" class="md-textfield md-textarea" style="min-height:70px" placeholder="例如：{&quot;temperature&quot;: 0.3}"></textarea>
+                <div id="panoramaConfigFields" style="display:none;flex-direction:column;gap:12px">
+                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px">
+                        <input type="checkbox" id="panoramaSameAsPrimary" checked style="width:18px;height:18px">
+                        与主模型使用相同 API 配置
+                    </label>
+                    <div id="panoramaApiFields" style="display:none;flex-direction:column;gap:12px;padding:12px;border:1px solid var(--md-sys-color-outline-variant);border-radius:12px">
+                        <div class="field-label" style="font-size:12px;color:var(--md-sys-color-primary);font-weight:600">API KEY</div>
+                        <input type="password" id="panoramaApiKey" class="md-textfield" placeholder="全景助手专用 API Key">
+                        <div class="field-label" style="font-size:12px;color:var(--md-sys-color-primary);font-weight:600">BASE URL</div>
+                        <input type="text" id="panoramaBaseUrl" class="md-textfield" placeholder="例如：https://api.deepseek.com/chat/completions">
+                        <div class="field-label" style="font-size:12px;color:var(--md-sys-color-primary);font-weight:600">MODEL NAME</div>
+                        <input type="text" id="panoramaModel" class="md-textfield" placeholder="全景助手模型名称">
+                        <div class="field-label" style="font-size:12px;color:var(--md-sys-color-primary);font-weight:600">CUSTOM BODY (JSON)</div>
+                        <textarea id="panoramaCustomBody" class="md-textfield md-textarea" style="min-height:70px" placeholder="例如：{&quot;temperature&quot;: 0.3}"></textarea>
+                    </div>
                 </div>
             </div>
 
@@ -1867,6 +1870,8 @@
             devBaseUrl: document.getElementById('devBaseUrl'),
             devModel: document.getElementById('devModel'),
             devCustomBody: document.getElementById('devCustomBody'),
+            panoramaEnabled: document.getElementById('panoramaEnabled'),
+            panoramaConfigFields: document.getElementById('panoramaConfigFields'),
             panoramaSameAsPrimary: document.getElementById('panoramaSameAsPrimary'),
             panoramaApiFields: document.getElementById('panoramaApiFields'),
             panoramaApiKey: document.getElementById('panoramaApiKey'),
@@ -1922,8 +1927,9 @@
             elements.devBaseUrl.value = settings.primary.baseUrl;
             elements.devModel.value = settings.primary.model;
             elements.devCustomBody.value = settings.primary.customBody;
+            elements.panoramaEnabled.checked = settings.panorama.enabled;
             elements.panoramaSameAsPrimary.checked = settings.panorama.sameAsPrimary;
-            elements.panoramaApiFields.style.display = settings.panorama.sameAsPrimary ? 'none' : 'flex';
+            updatePanoramaFields();
             elements.panoramaApiKey.value = settings.panorama.apiKey;
             elements.panoramaBaseUrl.value = settings.panorama.baseUrl;
             elements.panoramaModel.value = settings.panorama.model;
@@ -1938,6 +1944,7 @@
                     model: elements.devModel.value.trim(), customBody: elements.devCustomBody.value.trim()
                 },
                 panorama: {
+                    enabled: elements.panoramaEnabled.checked,
                     sameAsPrimary: elements.panoramaSameAsPrimary.checked,
                     apiKey: elements.panoramaApiKey.value.trim(), baseUrl: elements.panoramaBaseUrl.value.trim(),
                     model: elements.panoramaModel.value.trim(), customBody: elements.panoramaCustomBody.value.trim()
@@ -1952,8 +1959,17 @@
                 saveDevSettings();
             });
         }
+        function updatePanoramaFields() {
+            const enabled = elements.panoramaEnabled.checked;
+            elements.panoramaConfigFields.style.display = enabled ? 'flex' : 'none';
+            elements.panoramaApiFields.style.display = enabled && !elements.panoramaSameAsPrimary.checked ? 'flex' : 'none';
+        }
+        elements.panoramaEnabled.addEventListener('change', () => {
+            updatePanoramaFields();
+            saveDevSettings();
+        });
         elements.panoramaSameAsPrimary.addEventListener('change', () => {
-            elements.panoramaApiFields.style.display = elements.panoramaSameAsPrimary.checked ? 'none' : 'flex';
+            updatePanoramaFields();
             saveDevSettings();
         });
         [elements.devApiKey, elements.devBaseUrl, elements.devModel, elements.devCustomBody,

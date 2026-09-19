@@ -192,6 +192,7 @@ test('developer settings migrate the legacy primary API shape', () => {
     assert.equal(settings.enabled, true);
     assert.equal(settings.primary.apiKey, 'primary-key');
     assert.equal(settings.primary.baseUrl, 'https://primary.example/v1');
+    assert.equal(settings.panorama.enabled, true);
     assert.equal(settings.panorama.sameAsPrimary, true);
 });
 
@@ -228,6 +229,27 @@ test('panorama assistant can use an independent API profile', () => {
 test('developer API headers remain empty when disabled or missing a key', () => {
     assert.deepEqual(Core.buildDeveloperHeaders({ enabled: false, primary: { apiKey: 'key' } }), {});
     assert.deepEqual(Core.buildDeveloperHeaders({ enabled: true, primary: { apiKey: '' } }), {});
+});
+
+test('panorama custom API can be enabled while the primary custom API is disabled', () => {
+    const settings = {
+        enabled: false,
+        primary: { apiKey: 'unused-main-key', model: 'unused-main-model' },
+        panorama: { enabled: true, sameAsPrimary: false, apiKey: 'panorama-only-key', model: 'panorama-only-model' }
+    };
+    assert.deepEqual(Core.buildDeveloperHeaders(settings, 'primary'), {});
+    assert.deepEqual(Core.buildDeveloperHeaders(settings, 'panorama'), {
+        'X-Dev-Key': 'panorama-only-key', 'X-Dev-Model': 'panorama-only-model'
+    });
+});
+
+test('disabled panorama custom API falls back to the system model', () => {
+    const settings = {
+        enabled: true,
+        primary: { apiKey: 'main-key' },
+        panorama: { enabled: false, sameAsPrimary: true }
+    };
+    assert.deepEqual(Core.buildDeveloperHeaders(settings, 'panorama'), {});
 });
 
 test('escapeHtml protects HTML interpolation points', () => {
