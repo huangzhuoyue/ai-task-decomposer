@@ -29,7 +29,7 @@
 | --- | --- |
 | 前端 | 原生 HTML / CSS / JavaScript，Material Design 3 视觉体系，SSE 流式渲染 |
 | 后端 | Node.js ≥ 20，Express 5 |
-| 数据库 | SQLite（`better-sqlite3`，WAL 默认，单文件存储） |
+| 数据库 | SQLite（`better-sqlite3`，单文件存储，默认 journal 模式） |
 | 认证 | JWT（7 天）+ bcrypt 密码哈希 + WebAuthn / FIDO2 |
 | AI | OpenAI 兼容 `/chat/completions`，默认 `deepseek-flash`，支持 `response_format: json_object` |
 | 邮件 | nodemailer（QQ 邮箱 / 腾讯企业邮箱 SMTP） |
