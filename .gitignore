@@ -140,3 +140,25 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 /.workbuddy
+
+# 运行时数据与凭据（禁止入库）
+*.pem
+*.key
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# 本地部署与生成产物（不应入库）
+compose/
+.codex-docx-current-code/
+.contract-render/
+
+# 合同、软著、报告等文档材料不入库
+*.docx
+*.doc
+*.pdf
+
+# 归档材料与部署配置不入库
+docs/
+nginx/

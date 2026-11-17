@@ -1299,9 +1299,10 @@ app.use((error, req, res, next) => {
 });
 
 const PORT = Number.parseInt(process.env.PORT, 10) || 3200;
+const HOST = process.env.HOST || '0.0.0.0';
 const server = http.createServer(app);
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`AI Task Decomposer is available at http://localhost:${PORT}`);
+server.listen(PORT, HOST, () => {
+    console.log(`AI Task Decomposer is available at http://${HOST}:${PORT}`);
     console.log(`Database: ${DB_PATH}`);
 });
 
