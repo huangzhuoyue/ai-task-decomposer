@@ -56,12 +56,13 @@ ai-task-decomposer/
 │   ├── login.html             # 登录 / 注册 / 找回密码
 │   ├── mobile/                # 移动端界面
 │   └── favicon*、robots.txt
-├── nginx/                     # 三站点配置：桌面端、移动端、API
 ├── start-local.ps1            # Windows 一键启动（缺依赖时自动安装）
 ├── 用户使用说明.md             # 面向最终用户的操作手册
 ├── 技术文档.md                 # 面向开发者的实现说明
-└── docs/                      # 软著材料、历史版本、说明书
+└── LICENSE
 ```
+
+> `docs/`（软著材料、历史版本）与 `nginx/`（三站点部署配置）保留在本地，**不纳入版本控制**，`.gitignore` 已排除。
 
 ---
 
@@ -185,7 +186,7 @@ m.hzyweb.xyz      →  /var/www/html/front/mobile 静态前端（移动端），
 api.hzyweb.xyz    →  proxy_pass 127.0.0.1:3000  仅提供 API
 ```
 
-前端使用**同源** `fetch` 调用接口（`API_BASE = location.origin`），因此承载页面的站点必须把 `/api` 反代到后端，仅有 `api.` 子域是不够的。`nginx/` 下提供三份参考配置。
+前端使用**同源** `fetch` 调用接口（`API_BASE = location.origin`），因此承载页面的站点必须把 `/api` 反代到后端，仅有 `api.` 子域是不够的。三站点示例配置保留在本地 `nginx/` 目录（未入库），可参照其结构自行编写。
 
 ### 生产要点
 
@@ -234,7 +235,7 @@ npm test --prefix backend        # 单元测试：validation / rate-limit / tree
 - 密码以 bcrypt 哈希存储；接口统一返回 400/401/429 等语义化状态码，不泄露内部堆栈。
 - 默认安全响应头：`X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy`、`Permissions-Policy`。
 - AI 侧内置内容安全策略：涉及违法、欺骗、色情、暴力等请求时，模型仅返回单个安全审查节点。
-- 合法合规与原创性声明见 `docs/v1.1/关于《AI 任务拆解系统》合法合规及原创性声明.docx`。
+- 合法合规与原创性声明保留在本地 `docs/v1.1/`（未入库）。
 
 ---
 
@@ -244,7 +245,7 @@ npm test --prefix backend        # 单元测试：validation / rate-limit / tree
 | --- | --- | --- |
 | [用户使用说明.md](./用户使用说明.md) | 最终用户 | 界面导航、任务分解、编辑、AI 对话、账户与常见问题 |
 | [技术文档.md](./技术文档.md) | 开发者 | 架构、数据模型、接口与实现细节 |
-| `docs/` | 归档 | 软著材料、历史版本说明、系统说明书 |
+| `docs/`（本地） | 归档 | 软著材料、历史版本说明、系统说明书，不随仓库分发 |
 
 ---
 
